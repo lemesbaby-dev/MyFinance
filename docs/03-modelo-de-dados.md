@@ -7,11 +7,14 @@ Toda tabela de dados tem `user_id` e **toda consulta filtra por ele**.
 Servidor (SQLite) — `backend/internal/store/sql/schema.sql`:
 
 ```sql
-users(id, google_sub UNIQUE, email, name, picture, rev, created_at)   -- rev = cursor de sync do usuário
+users(id, google_sub UNIQUE, email, name, picture, rev, created_at,   -- rev = cursor de sync do usuário
+      rows_n, bytes_n, total_n, ops_day, ops_n)                       -- contadores de cota e do limite diário (v2)
 sessions(token_hash PK, user_id, device, created_at, expires_at)      -- só o hash do token
 entities(user_id, kind, id, rev, deleted_at, data JSON)               -- PK (user_id, kind, id)
-sync_ops(user_id, op_id)                                              -- idempotência do push
+sync_ops(user_id, op_id, applied_at)                                  -- idempotência do push (últimos 2000 por usuário)
 ```
+O schema é versionado com `PRAGMA user_version` (v1 = `schema.sql`; v2 = contadores em `users`); as migrações vivem em
+`store.go` e rodam ao abrir o banco.
 Índices: `(user_id, rev)` para o pull; **único** `(user_id, recurrence_id, date)` parcial em lançamentos
 vivos com recorrência (impede duplicar ocorrência entre aparelhos).
 
@@ -31,8 +34,8 @@ transaction: kind(income|expense|transfer), description, amount_cents>0, date, s
              installment_no?, installment_total?(≤120), installment_group?, notes
 ```
 Regras validadas no servidor: `paid_at` existe se, e só se, `status=paid`; transferência exige destino válido e
-diferente da origem; referências (`account_id`, `category_id`, `recurrence_id`, `parent_id`) existem, não foram
-excluídas e são **do mesmo usuário**. O servidor **não** cascateia exclusões: apagar uma conta com lançamentos é
+diferente da origem; referências `account_id`, `transfer_account_id` e `recurrence_id` existem, não foram
+excluídas e são **do mesmo usuário** (senão `rejected`). `category_id` e `parent_id` para categoria inexistente/excluída viram `null` ("cura"). O servidor **não** cascateia exclusões: apagar uma conta com lançamentos é
 regra do app (M4).
 
 ## Armazenamento no cliente (IndexedDB)

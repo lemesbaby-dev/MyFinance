@@ -59,23 +59,36 @@ Resposta `{ results: [{op_id, status, error?}] }`, com `status`:
 |---|---|---|
 | `ok` | aplicada | tira da fila |
 | `dup` | `op_id` já aplicado (reenvio após queda de rede) | tira da fila |
-| `gone` | item já excluído (exclusão vence edição) | tira da fila; o pull traz o tombstone |
+| `gone` | item já excluído (exclusão vence edição) | tira da fila; o pull traz o tombstone; **aparece na lista de recusados** ("foi excluído em outro aparelho") |
 | `conflict` | INSERT de ocorrência de recorrência duplicada (outro aparelho já gerou o mesmo dia) | descarta a cópia local |
-| `rejected` | inválida (`error`) — formato, referências, cota, ou UPDATE que colidiria com outra ocorrência da recorrência | registra para a interface mostrar |
+| `rejected` | inválida (`error`) — formato, referências, cota, limite diário, ou UPDATE que colidiria com outra ocorrência da recorrência | registra para a interface mostrar: contador na barra de status e na aba Mais; o item fica marcado "não enviado" e **fora dos saldos** até ser descartado ou corrigido (salvar de novo) |
 
 Só `ok` entra em `sync_ops` (reenviar uma recusada devolve o mesmo status). `delete` de id desconhecido é no-op `ok`.
 Referências já presentes no documento gravado não são revalidadas na edição. `GET /api/sync` devolve também `rev`:
 se o cursor do app for maior, o servidor foi restaurado de backup e o app reenfileira tudo e refaz o pull.
 
 **Conflitos**: *última escrita vence* por documento, na ordem de chegada; **exclusão vence edição**.
+⚠️ **Limitação conhecida**: não há detecção de conflito por `base_rev`. Se dois aparelhos editam o mesmo documento
+offline, a edição que chegar por último substitui a outra por inteiro (todos os campos do documento, não só o que mudou).
 `pay/unpay` é um upsert do lançamento inteiro (`status` + `paid_at`).
 
 **Isolamento e limites**: toda leitura/escrita filtra por `user_id`; ids e `op_id` valem por usuário.
-Cota: 50 mil documentos e 20 MB por usuário, 16 KB por documento.
+Cota: 50 mil documentos e 20 MB por usuário, 16 KB por documento; os contadores (`rows_n`, `bytes_n`, `total_n`) ficam em `users`
+e são atualizados dentro do push (recalculáveis: ver `recountSQL` em `store.go`), sem varrer `entities` a cada push.
+`sync_ops` guarda só os últimos 2000 `op_id`s por usuário (e nada com mais de 90 dias). Limite de 20 000 operações por usuário
+por dia (UTC; as que passarem voltam `rejected` "limite diário"). Rate limit: 120 pushes/min e 300 pulls/min por usuário.
+
+**Referências a categorias** (`category_id`, `parent_id`) para categoria inexistente ou excluída **não** são recusadas:
+o servidor grava `null` ("cura"). `account_id`, `transfer_account_id` e `recurrence_id` inválidos continuam `rejected`.
+Datas valem de 1900 a 2200 e valores < R$ 1 trilhão, no servidor e no app.
 
 **No app** (`frontend/src/lib/`): `db.js` (IndexedDB: `entities`, `outbox`, `meta`; grava dado e operação na
-mesma transação), `sync.js` (push → pull; offline não é erro), `uuid.js` (UUIDv7). O pull **não sobrescreve**
-item com alteração local ainda na fila. Ao trocar de usuário no aparelho, a cópia local é zerada.
+mesma transação), `sync.js` (push → pull; offline não é erro), `session.js` (de quem é o token e a cópia local), `uuid.js` (UUIDv7).
+O pull **não sobrescreve** item com alteração local ainda na fila. Ao trocar de usuário no aparelho, a cópia local é zerada.
+Se a cópia é de outra conta com alterações não enviadas (ou recusadas), o token da conta nova **não é gravado** (fica em memória) até
+o usuário escolher "Descartar e continuar" ou entrar com a outra conta; o token salvo leva o `userId` e, ao abrir, é comparado com
+o usuário da cópia local (divergiu: tela de bloqueio). Nada é enviado enquanto bloqueado. O push divide o lote ao meio em 400/413
+(até 1 op; a que continuar falhando vira "recusada") e limita cada lote a ~600 KB.
 
 **Quando sincroniza**: ao abrir, ao voltar `online`, após cada gravação (debounce 2 s) e botão manual.
 Falha de rede ⇒ a operação continua na outbox; nada se perde. (M2: ao abrir, ao voltar online, ao voltar à aba e 1,5 s após gravar.)
@@ -104,5 +117,6 @@ Falha de rede ⇒ a operação continua na outbox; nada se perde. (M2: ao abrir,
 ## Deploy (Contabo)
 - 1 VM pequena, **Caddy** (HTTPS automático via Let's Encrypt) → Go em `127.0.0.1:8080`, que também serve o front.
 - Firewall: só 22 (por chave), 80, 443.
-- Backup: `sqlite3 .backup` diário + cópia para fora da VM (ex.: bucket S3/B2 ou outra máquina). Restauração testada.
+- Backup: `scripts/backup.sh` diário (`sqlite3 .backup`, rotação) + cópia para fora da VM (rclone/scp, exemplos no script).
+  Restauração testada com `scripts/restore-test.sh` (integrity_check + contagem de linhas).
 - Domínio/subdomínio apontando para a VM (necessário para HTTPS e para PWA instalar).

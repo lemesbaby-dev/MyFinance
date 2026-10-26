@@ -18,12 +18,11 @@ backend/   Go (stdlib) + SQLite   ──► 1 binário: API + serve o frontend
 - Valores em **centavos (inteiros)**, nunca float.
 - `amount_cents` é sempre positivo; o sinal vem do `kind` (`income`, `expense`, `transfer`).
 - Transferência sai de uma conta e entra em outra, e **não conta como despesa** nem receita.
-- A view `v_movements` (em `schema.sql`) transforma cada lançamento em deltas por conta; as
-  queries de saldo ficam em `backend/internal/store/sql/`.
+- O saldo é calculado **no app** (`frontend/src/lib/finance.js`); o servidor só guarda os documentos.
 
-**Recorrências**: a regra fica em `recurrences`; as ocorrências são materializadas como
-lançamentos *pendentes* nos próximos 12 meses (na criação, na subida do servidor e a cada 24 h).
-Um índice único `(recurrence_id, date)` torna isso idempotente. Dia 31 em mês curto vira o último
+**Recorrências**: a regra é um documento `recurrence`; o app materializa as ocorrências como
+lançamentos *pendentes* nos próximos 12 meses (na criação e a cada abertura/sincronização; sem job no servidor).
+Um índice único `(user_id, recurrence_id, date)` no servidor impede duplicar a ocorrência entre aparelhos. Dia 31 em mês curto vira o último
 dia do mês (31/01 → 28/02 → 31/03).
 
 **Parcelas**: a soma das parcelas é sempre igual ao total; a sobra de centavos vai para as
@@ -62,11 +61,22 @@ ADDR=127.0.0.1:8080 ./financas
 ```
 
 - Coloque atrás de um proxy com **HTTPS** (Caddy ou Nginx): a sessão trafega no header e o login Google exige HTTPS.
-- **Backup**: copie o arquivo `.db` (use `sqlite3 financas.db ".backup out.db"` com o app rodando).
-- Bancos criados antes do M2 (M1) devem ser recriados; sem migração (nunca houve deploy).
-- **M1 exige banco novo**; o schema do M0 não é migrado (M0 nunca foi para produção).
-- `ADDR` padrão é `127.0.0.1:8080` (atrás do proxy); só confiamos em `X-Forwarded-For` quando a conexão vem de loopback.
-- Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS).
+- **Backup**: `scripts/backup.sh` (cron diário; usa `sqlite3 .backup`, rotação de `KEEP_DAYS` dias, comentários de como
+  enviar para fora da VM com rclone/scp) e `scripts/restore-test.sh` (restaura o backup num arquivo temporário e roda
+  `PRAGMA integrity_check` + contagem de linhas). Rode o restore-test de vez em quando: backup nunca restaurado é só esperança.
+  ```bash
+  DB_PATH=/var/lib/financas/financas.db BACKUP_DIR=/var/backups/financas scripts/backup.sh
+  BACKUP_DIR=/var/backups/financas scripts/restore-test.sh
+  ```
+- **Schema versionado**: o banco guarda `PRAGMA user_version`; ao subir, o binário aplica as migrações pendentes
+  (lista `migrations` em `backend/internal/store/store.go`). Banco antigo sem `user_version` é promovido sem perder dados.
+  Binário mais antigo que o banco se recusa a abrir.
+- `ADDR` padrão é `127.0.0.1:8080` (atrás do proxy). O `X-Forwarded-For` só é confiado quando a conexão vem de
+  `TRUSTED_PROXY` (IP ou CIDR, lista separada por vírgula; padrão: loopback). Em IPv6 o limite de requisições usa o prefixo /64.
+- Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS), `TRUSTED_PROXY`.
+- O servidor responde com `Content-Security-Policy` (e `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) em todas as
+  respostas, faz shutdown gracioso em SIGINT/SIGTERM e registra um log de acesso (método, caminho, status, duração).
+  `GET /api/health` confere o banco (503 se não responder): use-o no monitoramento.
 
 ## Instalar no celular (PWA)
 
@@ -84,6 +94,9 @@ O app abre sem internet (service worker guarda o casco; os dados ficam no aparel
 | POST | `/api/auth/google` · `/api/auth/logout` · GET `/api/auth/me` | login Google, sessão |
 | GET | `/api/sync?since=<rev>` | mudanças do usuário após o cursor (pull) |
 | POST | `/api/sync` | lote de operações da fila do app, idempotente por `op_id` (push) |
+| GET | `/api/export?format=json` | todos os documentos do usuário (download) |
+| DELETE | `/api/account` | `{"confirm_email": "..."}`: apaga a conta e tudo dela |
+| GET | `/api/health` | liveness + ping no banco |
 
 O app guarda uma cópia local (IndexedDB) e calcula tudo offline (`frontend/src/lib/finance.js`); o servidor só autentica,
 valida e sincroniza. Detalhes em `docs/02-arquitetura-offline.md`.
@@ -94,9 +107,9 @@ Autenticação: `POST /api/auth/google` troca o ID token do Google por uma sess�
 
 ## Próximos passos (do que os concorrentes têm)
 
-1. **Cartão de crédito** com fechamento/vencimento da fatura (tabela `cards`; compra entra na fatura do ciclo).
+1. **Cartão de crédito** com fechamento/vencimento da fatura (compra entra na fatura do ciclo).
 2. **Orçamento por categoria** (limite mensal + alerta).
-3. **Editar** lançamento (hoje só cria/paga/exclui) e editar/encerrar recorrência.
-4. Importação **OFX/CSV** e exportação.
-5. **Modo offline** de verdade (fila local de lançamentos que sincroniza depois).
-6. Open Finance (Pluggy/Belvo) — só se valer o custo.
+3. Importação **OFX/CSV**.
+4. Open Finance (Pluggy/Belvo) — só se valer o custo.
+
+Pendências conhecidas (ver `docs/05-plano-de-entregas.md`): limpeza (GC) de tombstones e detecção de conflito por `base_rev`.

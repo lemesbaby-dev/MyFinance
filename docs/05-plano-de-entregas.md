@@ -26,5 +26,10 @@ Cada marco termina com algo que roda e foi validado. Ordem pensada para provar o
 - **Dinheiro/recorrência**: testes unitários dirigidos (dia 31, bissexto, parcelas).
 - **Deploy/backup**: restauração real, não só "o cron rodou".
 
+## Pendências conhecidas (fora do escopo da revisão independente)
+- **GC de tombstones**: exclusões ficam como linhas `deleted_at` para sempre (limitadas pelo teto total de 4x a cota de linhas por usuário). Falta uma limpeza de tombstones antigos (cuidado com aparelhos que ficam muito tempo offline: precisam do tombstone para apagar a cópia local).
+- **Detecção de conflito por `base_rev`**: hoje é "última escrita vence por documento" (ver `docs/02`); editar o mesmo item em dois aparelhos offline perde a edição que chegar primeiro.
+- Cópia externa do backup depende de configurar o destino no `scripts/backup.sh` (rclone/scp); restauração real na VM ainda por fazer.
+
 > Nota M2: bancos criados antes do M2 (M1) devem ser recriados; sem migração (nunca houve deploy).
 > Nota M1: exige banco novo; o schema do M0 não é migrado (M0 nunca foi para produção).
