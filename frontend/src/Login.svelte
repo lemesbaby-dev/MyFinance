@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { api } from './lib/api.js';
   import { accept } from './lib/session.js';
+  import Header from './ui/Header.svelte';
+  import Banner from './ui/Banner.svelte';
   let { onlogin } = $props();
   let error = $state('');
   let btn;
@@ -42,14 +44,14 @@
 </script>
 
 <main>
-  <h1>Finanças</h1>
+  <Header title="Finanças" />
   <p class="muted">Entre com sua conta Google. Seus dados ficam separados dos de outras pessoas.</p>
   <div bind:this={btn} class="gbtn"></div>
-  {#if error}<p class="err" role="alert">{error}</p>{/if}
+  {#if error}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
 </main>
 
 <style>
-  main { max-width: 26rem; margin: 0 auto; padding: 3rem 1.25rem; }
-  h1 { font-size: 1.4rem; margin: 0 0 0.5rem; }
-  .gbtn { margin: 1.5rem 0; min-height: 44px; }
+  main { max-width: 26rem; margin: 0 auto; padding: var(--space-12) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+  p { margin: 0; }
+  .gbtn { margin: var(--space-4) 0; min-height: var(--tap); }
 </style>

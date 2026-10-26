@@ -3,6 +3,13 @@
   import { sync } from './lib/sync.js';
   import { api } from './lib/api.js';
   import { getTheme, getCvd, setTheme, setCvd } from './lib/theme.js';
+  import Card from './ui/Card.svelte';
+  import Segmented from './ui/Segmented.svelte';
+  import Switch from './ui/Switch.svelte';
+  import Button from './ui/Button.svelte';
+  import Badge from './ui/Badge.svelte';
+  import Banner from './ui/Banner.svelte';
+  import TextInput from './ui/TextInput.svelte';
 
   import { onMount } from 'svelte';
 
@@ -64,101 +71,98 @@
   }
 </script>
 
-<section class="pad">
+<section class="sec">
   <h2>Aparência</h2>
-  <div class="card">
-    <span class="field-label" id="tema-l">Tema</span>
-    <div class="seg" role="group" aria-labelledby="tema-l">
-      {#each THEMES as [v, label] (v)}
-        <button type="button" class:on={theme === v} aria-pressed={theme === v} onclick={() => { theme = v; setTheme(v); }}>{label}</button>
-      {/each}
+  <Card>
+    <div class="stack">
+      <Segmented label="Tema" options={THEMES} bind:value={theme} onchange={setTheme} />
+      <div class="opt">
+        <div class="grow"><strong id="cvd-l">Cores para daltonismo</strong><span class="muted small">Usa uma paleta separável por luminância e matiz azul-laranja</span></div>
+        <Switch bind:checked={cvd} labelledby="cvd-l" onchange={setCvd} />
+      </div>
     </div>
-    <div class="opt">
-      <div class="grow"><strong id="cvd-l">Cores para daltonismo</strong><span class="muted small">Usa uma paleta separável por luminância e matiz azul-laranja</span></div>
-      <button type="button" class="switch" class:on={cvd} role="switch" aria-checked={cvd} aria-labelledby="cvd-l" onclick={() => { cvd = !cvd; setCvd(cvd); }}><i></i></button>
-    </div>
-  </div>
+  </Card>
 </section>
 
-<section class="pad">
-  <h2>Cartão de crédito <span class="badge">Em breve</span></h2>
+<section class="sec">
+  <h2>Cartão de crédito <Badge tone="brand">Em breve</Badge></h2>
   <p class="muted">Fatura com fechamento e vencimento, e compras entrando na fatura do ciclo. Por enquanto, lance compras parceladas na aba Mês.</p>
 </section>
 
 {#if !standalone && (canPrompt || ios)}
-  <section class="pad">
+  <section class="sec">
     <h2>Instalar o app</h2>
     {#if canPrompt}
       <p class="muted">Instale na tela inicial para abrir como um app, mesmo sem internet.</p>
-      <button class="btn small" onclick={install}>Instalar</button>
+      <div><Button onclick={install}>Instalar</Button></div>
     {:else}
       <p class="muted">No Safari: toque em Compartilhar e escolha <strong>Adicionar à Tela de Início</strong>. Instalado, o iPhone não apaga seus dados locais por falta de uso.</p>
     {/if}
   </section>
 {/if}
 
-<section class="pad">
+<section class="sec">
   <h2>Sincronização</h2>
-  <p>
-    {#if !app.status.online || app.status.offline}<span class="badge warn">Offline</span> Tudo continua funcionando; envio quando a rede voltar.
-    {:else if app.status.syncing}Sincronizando…
-    {:else if app.status.pending}<span class="badge warn">{app.status.pending} alteração(ões) por enviar</span>
-    {:else}<span class="badge">Tudo sincronizado</span>{/if}
-  </p>
-  {#if app.status.error}<p class="err" role="alert">{app.status.error}</p>{/if}
+  {#if !app.status.online || app.status.offline}<Banner icon="cloud-off">Offline. Tudo continua funcionando; envio quando a rede voltar.</Banner>
+  {:else if app.status.syncing}<Banner icon="refresh">Sincronizando…</Banner>
+  {:else if app.status.pending}<Banner tone="warn" icon="clock">{app.status.pending} alteração(ões) por enviar</Banner>
+  {:else}<Banner icon="check">Tudo sincronizado</Banner>{/if}
+  {#if app.status.error}<Banner tone="danger" icon="alert">{app.status.error}</Banner>{/if}
   {#if app.persisted === false}<p class="muted small">O navegador pode apagar os dados locais se faltar espaço. Instale o app e mantenha a sincronização em dia.</p>{/if}
-  <button class="btn small ghost" onclick={now} disabled={busy}>Sincronizar agora</button>
+  <div><Button variant="secondary" onclick={now} loading={busy}>Sincronizar agora</Button></div>
 </section>
 
 {#if app.rejected.length}
-  <section class="pad">
+  <section class="sec">
     <h2>Recusados pelo servidor ({app.rejected.length})</h2>
     <p class="muted small">Estas alterações não foram aceitas e não entram nos saldos. Descarte para voltar ao que o servidor tem, ou edite o item e salve de novo.</p>
-    <ul class="rows">
-      {#each app.rejected as r, i (i)}
-        <li>
-          <div class="grow"><strong>{describe(r)}</strong><span class="muted small">{r.error}</span></div>
-          <button class="btn small ghost" onclick={() => dismissRejected(i)}>Descartar</button>
-        </li>
-      {/each}
-    </ul>
+    <Card pad={false}>
+      <ul>
+        {#each app.rejected as r, i (i)}
+          <li>
+            <div class="grow"><strong>{describe(r)}</strong><span class="muted small">{r.error}</span></div>
+            <Button variant="secondary" size="sm" onclick={() => dismissRejected(i)}>Descartar</Button>
+          </li>
+        {/each}
+      </ul>
+    </Card>
   </section>
 {/if}
 
-<section class="pad">
+<section class="sec">
   <h2>Conta</h2>
   <p class="muted">{app.user?.email ?? ''}</p>
-  <button class="btn ghost" onclick={onlogout}>Sair</button>
+  <div><Button variant="secondary" onclick={onlogout}>Sair</Button></div>
 </section>
 
-<section class="pad">
+<section class="sec">
   <h2>Seus dados</h2>
   <p class="muted small">Baixe uma cópia de tudo que está no servidor ou apague sua conta de vez. Precisa de internet.</p>
-  <p><button class="btn small ghost" onclick={exportData} disabled={dataBusy}>Exportar meus dados</button></p>
+  <div><Button variant="secondary" onclick={exportData} disabled={dataBusy}>Exportar meus dados</Button></div>
   {#if !deleting}
-    <button class="btn small ghost" onclick={() => (deleting = true)}>Excluir minha conta</button>
+    <div><Button variant="danger" onclick={() => (deleting = true)}>Excluir minha conta</Button></div>
   {:else}
     <form onsubmit={removeAccount}>
       <p class="muted small">Isto apaga sua conta e todos os seus dados, neste aparelho e no servidor, e não tem volta. Para confirmar, digite seu e-mail ({app.user?.email}).</p>
-      <label class="field"><span>E-mail</span><input type="email" bind:value={confirmEmail} autocomplete="off" required /></label>
+      <TextInput label="E-mail" type="email" bind:value={confirmEmail} autocomplete="off" />
       <div class="actions">
-        <button type="button" class="btn ghost" onclick={() => { deleting = false; confirmEmail = ''; }}>Cancelar</button>
-        <button class="btn" disabled={dataBusy || confirmEmail.trim().toLowerCase() !== (app.user?.email ?? '').toLowerCase()}>Excluir para sempre</button>
+        <Button variant="secondary" onclick={() => { deleting = false; confirmEmail = ''; }}>Cancelar</Button>
+        <Button variant="danger" type="submit" disabled={dataBusy || confirmEmail.trim().toLowerCase() !== (app.user?.email ?? '').toLowerCase()}>Excluir para sempre</Button>
       </div>
     </form>
   {/if}
-  {#if dataError}<p class="err" role="alert">{dataError}</p>{/if}
+  {#if dataError}<Banner tone="danger" icon="alert">{dataError}</Banner>{/if}
 </section>
 
 <style>
-  .field-label { display: block; font-size: 0.875rem; color: var(--muted); margin-bottom: var(--space-2); }
-  .card .seg { background: var(--surface-sunken); border-color: transparent; border-radius: var(--radius-2); padding: var(--space-1); gap: var(--space-1); }
-  .card .seg button { min-height: var(--tap); border-radius: var(--radius-1); font-weight: var(--fw-bold); color: var(--text-muted); }
-  .card .seg button.on { background: var(--surface-raised); color: var(--text-strong); border: var(--bw-1) solid var(--border-subtle); }
+  .sec { display: flex; flex-direction: column; gap: var(--space-3); }
+  .sec p { margin: 0; }
+  .stack { display: flex; flex-direction: column; gap: var(--space-4); }
   .opt { display: flex; align-items: center; gap: var(--space-3); }
-  .opt .grow { flex: 1; display: grid; gap: var(--space-1); }
-  .switch { position: relative; flex: none; width: 52px; height: 30px; border: 0; padding: 0; border-radius: var(--radius-pill); background: var(--border-strong); }
-  .switch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: var(--radius-pill); background: var(--surface-raised); transition: transform var(--dur-base) var(--ease-out); }
-  .switch.on { background: var(--brand); }
-  .switch.on i { transform: translateX(22px); background: var(--on-brand); }
+  .grow { flex: 1; display: grid; gap: var(--space-1); min-width: 0; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: var(--space-3); padding: var(--row-pad); }
+  li + li { border-top: var(--bw-1) solid var(--border-subtle); }
+  form { display: flex; flex-direction: column; gap: var(--space-3); }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 </style>
