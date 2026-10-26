@@ -76,12 +76,14 @@ de servidor foi removida; o app de Android não funciona nesta versão.
 
 | Método | Rota | |
 |---|---|---|
-| GET | `/api/summary?until=YYYY-MM-DD` | saldos por conta, atual/previsto e gastos do mês por categoria |
-| GET/POST | `/api/transactions` | filtros `from`, `to`, `status`; `installments` no POST cria parcelas |
-| POST | `/api/transactions/{id}/pay` · `/unpay` | efetiva / desfaz |
-| DELETE | `/api/transactions/{id}` | |
-| POST | `/api/recurrences` | cria a regra e materializa 12 meses |
-| POST | `/api/accounts` · GET/POST `/api/categories` | |
+| POST | `/api/auth/google` · `/api/auth/logout` · GET `/api/auth/me` | login Google, sessão |
+| GET | `/api/sync?since=<rev>` | mudanças do usuário após o cursor (pull) |
+| POST | `/api/sync` | lote de operações da fila do app, idempotente por `op_id` (push) |
+
+O app guarda uma cópia local (IndexedDB) e calcula tudo offline; o servidor só autentica, valida e sincroniza.
+Detalhes em `docs/02-arquitetura-offline.md`. **Em andamento:** o saldo/recorrência/parcelas em JS (M3) e a
+interface sobre a cópia local (M4) ainda não foram feitos — a tela atual (`App.svelte`) usa a API antiga e está quebrada
+nesta branch até lá.
 
 Autenticação: `POST /api/auth/google` troca o ID token do Google por uma sessão; as demais rotas exigem `Authorization: Bearer <sessão>`. Todos os dados são isolados por usuário.
 

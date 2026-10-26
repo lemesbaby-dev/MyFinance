@@ -41,26 +41,40 @@ Cliente usa a biblioteca `idb` (wrapper pequeno) ou IndexedDB puro. Sem SQLite-W
   Permite criar offline e reenviar sem duplicar.
 - O servidor guarda o UUID como `id` (TEXT). `INTEGER` autoincrement deixa de ser a chave.
 
-## Protocolo de sincronização
-Cada linha tem `rev` (inteiro global do servidor, incrementa a cada escrita) e `deleted_at`.
+## Protocolo de sincronização (implementado no M2)
+O servidor guarda **documentos JSON** numa só tabela `entities` (`user_id, kind, id, rev, deleted_at, data`),
+com `kind` ∈ `account | category | recurrence | transaction`. `rev` é um contador **por usuário**
+(cada escrita incrementa) e serve de cursor. Exclusão é lógica (tombstone).
 
-**Pull** — `GET /api/sync?since=<rev>` → `{ changes: {accounts:[…], transactions:[…], …}, cursor: <rev> }`
-(inclui linhas com `deleted_at` como tombstone). O cliente aplica e guarda o `cursor`.
+**Pull** — `GET /api/sync?since=<rev>&limit=<n≤1000>` →
+`{ changes: [{kind, id, rev, deleted, data}], cursor, more }`. O app repete enquanto `more=true`.
 
-**Push** — `POST /api/sync` com lote de operações da outbox:
+**Push** — `POST /api/sync` (lote ≤ 500 operações, aplicado numa transação):
 ```json
-{ "ops": [ { "op_id": "uuid", "entity": "transactions", "id": "uuid",
-             "action": "upsert|delete", "data": { … } } ] }
+{ "ops": [ { "op_id": "uuid", "kind": "transaction", "id": "uuid", "action": "upsert|delete", "data": { … } } ] }
 ```
-- `op_id` registrado no servidor → reenvio é ignorado (idempotente, RNF5).
-- Resposta: resultado por operação + novo cursor.
+Resposta `{ results: [{op_id, status, error?}] }`, com `status`:
 
-**Conflitos**: *última escrita vence* por linha (o servidor aplica na ordem de chegada). Para dois
-aparelhos do mesmo dono, é aceitável. Exceção tratada: `pay/unpay` é um upsert da linha inteira
-com `status` e `paid_at` — sem operação especial.
+| status | significado | o app faz |
+|---|---|---|
+| `ok` | aplicada | tira da fila |
+| `dup` | `op_id` já aplicado (reenvio após queda de rede) | tira da fila |
+| `gone` | item já excluído (exclusão vence edição) | tira da fila; o pull traz o tombstone |
+| `conflict` | ocorrência de recorrência duplicada (outro aparelho já gerou o mesmo dia) | descarta a cópia local |
+| `rejected` | inválida (`error`) — validação de formato, referências ou cota | registra para a interface mostrar |
+
+**Conflitos**: *última escrita vence* por documento, na ordem de chegada; **exclusão vence edição**.
+`pay/unpay` é um upsert do lançamento inteiro (`status` + `paid_at`).
+
+**Isolamento e limites**: toda leitura/escrita filtra por `user_id`; ids e `op_id` valem por usuário.
+Cota: 50 mil documentos e 20 MB por usuário, 16 KB por documento.
+
+**No app** (`frontend/src/lib/`): `db.js` (IndexedDB: `entities`, `outbox`, `meta`; grava dado e operação na
+mesma transação), `sync.js` (push → pull; offline não é erro), `uuid.js` (UUIDv7). O pull **não sobrescreve**
+item com alteração local ainda na fila. Ao trocar de usuário no aparelho, a cópia local é zerada.
 
 **Quando sincroniza**: ao abrir, ao voltar `online`, após cada gravação (debounce 2 s) e botão manual.
-Falha de rede ⇒ a operação continua na outbox; nada se perde.
+Falha de rede ⇒ a operação continua na outbox; nada se perde. (M2: ao abrir, ao voltar online, ao voltar à aba e 1,5 s após gravar.)
 
 **Ordem**: a outbox é enviada na ordem de criação; o servidor valida referências (conta existe e é do usuário).
 

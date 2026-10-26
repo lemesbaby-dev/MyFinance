@@ -9,8 +9,8 @@ Erros: `{ "error": "mensagem" }` com o status HTTP correto (nunca erro em 200).
 | POST | `/auth/google` | `{id_token, device}` → `{token, user}`. Valida o token e cria o usuário no 1º acesso (casa por `google_sub`) |
 | POST | `/auth/logout` | revoga a sessão atual |
 | GET | `/auth/me` | usuário da sessão |
-| GET | `/sync?since=<rev>` | pull: linhas alteradas e tombstones após `rev` |
-| POST | `/sync` | push: lote de operações idempotentes (ver `02-arquitetura-offline.md`) |
+| GET | `/sync?since=<rev>&limit=` | pull: documentos alterados e tombstones após `rev`, em ordem |
+| POST | `/sync` | push: lote (≤500) de operações idempotentes por `op_id`; resultado por operação (ver `02-arquitetura-offline.md`) |
 | GET | `/export?format=json\|csv` | exporta todos os dados do próprio usuário |
 | DELETE | `/account` | exclui o usuário e todos os dados (confirmação digitando o e-mail) |
 
@@ -31,8 +31,8 @@ Verificação do ID token no Go: assinatura RS256 contra as chaves públicas do 
 a stdlib (crypto/rsa) ou com `google.golang.org/api/idtoken` — decidimos no M1.
 
 ## Validação no servidor (push)
-Mesmas regras do esqueleto (`validateTx`) para cada upsert: tipo, valor > 0, data válida,
-transferência com destino diferente, `account_id`/`category_id`/`recurrence_id` pertencem ao usuário.
+Cada upsert passa por `store/validate.go`: campos exatos (desconhecido é recusado), tipo, valor > 0, datas, `paid_at` ⇔ `status=paid`,
+transferência com destino diferente e referências (`account_id`, `category_id`, `recurrence_id`, `parent_id`) existentes e do próprio usuário.
 Operação inválida retorna erro **por operação** e não derruba o lote; o cliente mostra o item como "rejeitado".
 
 ## Limites

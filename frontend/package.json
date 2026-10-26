@@ -7,11 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --test src/lib/sync.test.js",
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npx cap open android"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "fake-indexeddb": "^6.2.6",
     "svelte": "^5.0.0",
     "vite": "^6.0.0"
   },

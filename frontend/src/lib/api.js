@@ -53,6 +53,8 @@ export const api = {
   authConfig: () => call('GET', '/api/auth/config'),
   loginGoogle: (id_token) => call('POST', '/api/auth/google', { id_token, device: navigator.userAgent.slice(0, 80) }),
   me: () => call('GET', '/api/auth/me'),
+  push: (ops) => call('POST', '/api/sync', { ops }),
+  pull: (since) => call('GET', `/api/sync?since=${since}`),
   logout: () => call('POST', '/api/auth/logout', {}),
   summary: (until) => call('GET', '/api/summary' + (until ? `?until=${until}` : '')),
   categories: () => call('GET', '/api/categories'),
