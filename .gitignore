@@ -1,0 +1,8 @@
+node_modules/
+frontend/dist/
+frontend/android/
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
+backend/financas
+*.keystore
