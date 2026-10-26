@@ -12,7 +12,6 @@
   import Categories from './Categories.svelte';
   import More from './More.svelte';
   import ConfirmHost from './ui/ConfirmHost.svelte';
-  import ToastHost from './ui/ToastHost.svelte';
   import { confirmDialog } from './ui/confirm.js';
   import Header from './ui/Header.svelte';
   import TabBar from './ui/TabBar.svelte';
@@ -144,7 +143,6 @@
   </div>
 {/if}
 <ConfirmHost />
-<ToastHost />
 
 <style>
   .shell main { max-width: 42rem; margin: 0 auto; padding: var(--space-4) var(--space-4) calc(var(--tabbar-h) + var(--space-16)); display: flex; flex-direction: column; gap: var(--space-4); }
