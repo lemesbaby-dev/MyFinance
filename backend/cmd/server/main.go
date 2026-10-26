@@ -42,7 +42,7 @@ func main() {
 		Verifier: &auth.Google{ClientID: clientID},
 		ClientID: clientID,
 		MaxUsers: maxUsers,
-		Origins:  strings.Split(env("ALLOWED_ORIGINS", "https://localhost,http://localhost,capacitor://localhost,http://localhost:5173"), ","),
+		Origins:  strings.Split(env("ALLOWED_ORIGINS", "http://localhost:5173"), ","),
 	}
 
 	mux := http.NewServeMux()
@@ -59,6 +59,13 @@ func spa(dir string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := os.Stat(dir + r.URL.Path); err != nil && !strings.Contains(r.URL.Path, ".") {
 			r.URL.Path = "/"
+		}
+		// Arquivos com hash no nome nunca mudam; o resto (index, sw.js, manifest) precisa revalidar
+		// para o navegador enxergar versão nova do app e do service worker.
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		fs.ServeHTTP(w, r)
 	})

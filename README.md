@@ -68,10 +68,14 @@ ADDR=127.0.0.1:8080 ./financas
 - `ADDR` padrão é `127.0.0.1:8080` (atrás do proxy); só confiamos em `X-Forwarded-For` quando a conexão vem de loopback.
 - Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS).
 
-## APK (Android)
+## Instalar no celular (PWA)
 
-**Fora do escopo:** o alvo é o PWA. O Capacitor/APK não é mantido e a tela de configuração
-de servidor foi removida; o app de Android não funciona nesta versão.
+Abra o endereço (HTTPS) no navegador do celular:
+- **Android/Chrome:** menu ⋮ → *Instalar app* (ou o cartão "Instalar" na aba Mais).
+- **iPhone/Safari:** Compartilhar → *Adicionar à Tela de Início*. Instalar importa: o Safari pode apagar os dados
+  de sites que não são abertos por ~7 dias, mas não os de apps instalados na tela inicial.
+
+O app abre sem internet (service worker guarda o casco; os dados ficam no aparelho e sincronizam depois).
 
 ## API
 

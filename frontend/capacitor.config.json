@@ -1,6 +1,0 @@
-{
-  "appId": "br.app.financas",
-  "appName": "Finanças",
-  "webDir": "dist",
-  "server": { "androidScheme": "https" }
-}

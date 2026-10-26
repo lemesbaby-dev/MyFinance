@@ -8,6 +8,7 @@ import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays } fro
 
 export const app = $state({
   ready: false,
+  persisted: null, // o navegador prometeu não apagar os dados locais? (null = ainda não sabemos)
   synced: false, // já houve uma sincronização completa neste aparelho (evita oferecer "primeiros passos" antes de os dados chegarem)
   user: null,
   accounts: [], categories: [], recurrences: [], transactions: [],
@@ -81,6 +82,8 @@ export async function init(user) {
   await db.setMeta('userInfo', user);
   app.user = user;
   app.synced = await db.getMeta('synced', false);
+  // Pede armazenamento persistente: sem isso o navegador pode apagar o IndexedDB em falta de espaço (e o Safari após ~7 dias).
+  navigator.storage?.persist?.().then((p) => (app.persisted = p)).catch(() => {});
   await reload();
   await extendRecurrences();
   app.status = await sync.status();
