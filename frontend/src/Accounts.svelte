@@ -74,7 +74,8 @@
             <CategoryDot glyph="bank" />
             <div class="main">
               <div class="t">{a.name}{#if a.archived} <Badge>arquivada</Badge>{/if}{#if app.rejectedIds.has(a.id)} <Badge tone="overdue" icon="alert">não enviada</Badge>{/if}</div>
-              <div class="m">{TYPES[a.type]}{#if by[a.id]} · previsto no mês <Money cents={by[a.id].projected_cents} kind="neutral" size="sm" />{/if}</div>
+              <div class="m">{TYPES[a.type]}</div>
+              {#if by[a.id]}<div class="m">Previsto no mês: <Money cents={by[a.id].projected_cents} /></div>{/if}
             </div>
             <Money cents={by[a.id]?.current_cents ?? 0} size="md" />
             <IconButton icon="edit" label="Editar {a.name}" tone="muted" onclick={() => open(a)} />

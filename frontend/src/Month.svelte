@@ -42,7 +42,7 @@
   const moved = (f) => { const v = monthView(app.transactions, month, f, today, archived, app.rejectedIds); return v.income_cents + v.expense_cents; };
   const done = $derived(moved('paid'));
   const todo = $derived(moved('pending'));
-  const label = $derived(`${MONTHS[+month.slice(5, 7) - 1]} de ${month.slice(0, 4)}`);
+  const label = $derived(`${MONTHS[+month.slice(5, 7) - 1]} de ${month.slice(0, 4)}`.replace(/^./, (c) => c.toUpperCase()));
   const hasAccounts = $derived(app.accounts.some((a) => !a.archived));
   const days = $derived(groupByDate(view.rows));
   const spending = $derived(view.spending.map((s) => ({ label: s.category_id ? catName(s.category_id) : 'Sem categoria', cents: s.cents, n: s.category_id ? catOf(s.category_id) : 10 })));
