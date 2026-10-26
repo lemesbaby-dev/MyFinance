@@ -25,7 +25,9 @@
 </div>
 
 <style>
-  .ui-hero { padding: var(--space-4); border-radius: var(--card-radius); background: var(--surface-raised); border: var(--bw-1) solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--space-2); }
+  .ui-hero { padding: var(--space-4); border-radius: var(--card-radius); background: var(--surface-raised); border: var(--bw-1) solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--space-2); container-type: inline-size; }
+  /* Celular estreito: valores em --fs-5 para os dois caberem lado a lado (7 dígitos ainda quebram em 2 linhas, de propósito). */
+  @container (max-width: 25rem) { .cols :global(.ui-money) { font-size: var(--fs-5); } }
   .cols { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
   .cols > div { display: flex; flex-direction: column; gap: var(--space-1); }
   .end { text-align: right; align-items: flex-end; }
