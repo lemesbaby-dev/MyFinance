@@ -54,6 +54,6 @@ test('sw: navegação com HTML do app entra no cache; portal cativo e não-HTML 
   assert.match(await sw.cache.get('/').clone().text(), /assets\/index-1/, 'JSON citando /assets/ também não entra');
 });
 
-test('sw: cache v3', () => {
-  assert.match(readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8'), /financas-shell-v3/);
+test('sw: cache v4', () => {
+  assert.match(readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8'), /financas-shell-v4/);
 });
