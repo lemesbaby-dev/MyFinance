@@ -164,10 +164,12 @@ export async function createInstallments(base, n) {
 // `extra` são itens que precisam ir junto (atomicidade); `id` permite religar algo à regra antes de ela existir.
 async function addRecurrence(rec, extra = [], id = uuidv7()) {
   const m = materialize({ ...rec, id }, horizon(todayISO()), uuidv7);
+  // A regra vai PRIMEIRO na fila: o servidor valida que `recurrence_id` existe, então os lançamentos
+  // que a referenciam (novos ou religados em `extra`) só podem chegar depois dela.
   await sync.saveMany([
+    put('recurrence', id, { ...rec, generated_until: m.generated_until }),
     ...extra,
     ...m.txs.map((t) => put('transaction', t.id, t.data)),
-    put('recurrence', id, { ...rec, generated_until: m.generated_until }),
   ]);
 }
 

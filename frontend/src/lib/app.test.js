@@ -235,3 +235,30 @@ test('deleteCategory: cascata atômica (lançamentos, recorrências e filhas sol
   const ops = await db.nextOps(1000);
   assert.ok(ops.some((o) => o.kind === 'category' && o.id === 'cat1' && o.action === 'delete'));
 });
+
+// O servidor valida referências: a regra precisa chegar ANTES dos lançamentos que a citam.
+// (Regressão real: com a regra no fim da fila, todas as ocorrências voltavam "recorrência inválida".)
+async function assertRuleBeforeOccurrences() {
+  const ops = await db.nextOps(100000);
+  const firstRule = new Map();
+  ops.forEach((o, i) => { if (o.kind === 'recurrence' && o.action === 'upsert' && !firstRule.has(o.id)) firstRule.set(o.id, i); });
+  let checked = 0;
+  ops.forEach((o, i) => {
+    const rid = o.kind === 'transaction' && o.action === 'upsert' ? o.data.recurrence_id : null;
+    if (rid && firstRule.has(rid)) {
+      checked++;
+      assert.ok(firstRule.get(rid) < i, `lançamento ${o.id} na posição ${i} antes da regra ${rid} (${firstRule.get(rid)})`);
+    }
+  });
+  assert.ok(checked > 0, 'o teste precisa ter verificado alguma ocorrência');
+}
+
+test('ordem da fila: regra antes das ocorrências (criar e "este e os próximos")', async () => {
+  await A.saveAccount(null, { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  await A.createRecurrence({ kind: 'expense', description: 'Gym', amount_cents: 9900, account_id: app.accounts[0].id, frequency: 'monthly', start_date: START });
+  await assertRuleBeforeOccurrences();
+  const r = app.recurrences[0];
+  const t = occ(r.id)[5];
+  await A.editRecurring(t, 'following', { amount_cents: 12000, date: t.date, description: 'Gym', status: 'pending', paid_at: null });
+  await assertRuleBeforeOccurrences();
+});
