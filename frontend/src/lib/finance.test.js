@@ -17,7 +17,7 @@ test('money: formata BRL', () => {
 test('parseMoney: aceita formatos brasileiros e rejeita lixo', () => {
   const cases = { '1.234,56': 123456, '1234,56': 123456, '1234.56': 123456, 'R$ 12,5': 1250, 12: 1200, '0,99': 99, '-10,00': -1000, '1.000': 100000 };
   for (const [s, want] of Object.entries(cases)) assert.equal(parseMoney(s), want, s);
-  for (const bad of ['', 'abc', 'R$']) assert.equal(parseMoney(bad), null, bad);
+  for (const bad of ['', 'abc', 'R$', '0,001', '1.23.4', '1,000', '-']) assert.equal(parseMoney(bad), null, bad);
 });
 
 test('datas: validação e aritmética', () => {
@@ -117,6 +117,17 @@ test('conta arquivada fica fora dos saldos', () => {
   assert.deepEqual(b.accounts.map((a) => a.id), ['ca']);
 });
 
+test('arquivada: transferência para ela não perde o crédito; totais só com as ativas; `all` mostra o real', () => {
+  const accs = [{ id: 'a', name: 'A', type: 'checking', initial_balance_cents: 1000, archived: false },
+    { id: 'z', name: 'Z', type: 'checking', initial_balance_cents: 500, archived: true }];
+  const t = [tx({ id: 1, kind: 'transfer', amount_cents: 300, account_id: 'a', transfer_account_id: 'z', status: 'paid', date: '2026-10-10' })];
+  const b = balances(accs, t, '2026-10-31');
+  assert.deepEqual(b.accounts.map((a) => a.id), ['a']);
+  assert.equal(b.current_cents, 700);
+  const z = b.all.find((a) => a.id === 'z');
+  assert.deepEqual([z.archived, z.current_cents], [true, 800]);
+});
+
 // ---- visão do mês: Todos / Pendentes / Efetivados ----
 const month = '2026-10';
 const today = '2026-10-15';
@@ -130,6 +141,12 @@ test('filtro Todos soma pagos e pendentes; transferência fica fora dos totais',
   assert.equal(v.expense_cents, 150000 + 30000 + 12000 + 2500);
   assert.equal(v.result_cents, v.income_cents - v.expense_cents);
   assert.ok(v.rows.some((r) => r.kind === 'transfer'), 'transferência aparece na lista');
+});
+
+test('monthView ignora lançamentos de conta arquivada', () => {
+  const v = monthView(mtx, month, 'all', today, new Set(['ca']));
+  assert.ok(v.rows.length > 0 && v.rows.every((r) => r.account_id !== 'ca'));
+  assert.equal(monthView(mtx, month, 'all', today).rows.length, 6);
 });
 
 test('filtro Pendentes e Efetivados separam lista, totais e categorias', () => {
@@ -165,7 +182,7 @@ test('horizonte: hoje + 12 meses, sem estourar no dia 31', () => {
   assert.equal(horizon('2026-08-31', 6), '2027-02-28');
 });
 
-test('materializar: 13 ocorrências, idempotente, janela rola, exclusão não ressuscita', () => {
+test('materializar: 13 ocorrências, idempotente, janela rola', () => {
   const h = horizon('2026-10-15'); // 2027-10-15
   const m1 = materialize(rec, h, newId);
   assert.equal(m1.txs.length, 13); // out/26 ... out/27
@@ -175,11 +192,39 @@ test('materializar: 13 ocorrências, idempotente, janela rola, exclusão não re
 
   assert.equal(materialize(recAfter, h, newId).txs.length, 0, 'rodar de novo não duplica');
 
-  // usuário exclui uma ocorrência já gerada; reabrir o app não a recria
   const m2 = materialize(recAfter, horizon('2026-12-15'), newId); // horizonte avança 2 meses
   assert.deepEqual(m2.txs.map((t) => t.data.date), ['2027-11-01', '2027-12-01']);
   assert.equal(m2.generated_until, '2027-12-15');
 
   assert.equal(materialize({ ...rec, active: false }, h, newId).txs.length, 0);
   assert.equal(materialize({ ...rec, end_date: '2026-12-31' }, h, newId).txs.length, 3);
+});
+
+test('materializar: exclusão não ressuscita', () => {
+  const h = horizon('2026-10-15');
+  const m1 = materialize(rec, h, newId);
+  let set = m1.txs.map((t) => t.data.date);
+  const saved = { ...rec, generated_until: m1.generated_until }; // a regra gravada
+  set = set.filter((d) => d !== '2026-12-01'); // usuário exclui uma ocorrência já gerada
+  const again = materialize(saved, h, newId);
+  set.push(...again.txs.map((t) => t.data.date)); // reabrir o app / sincronizar
+  assert.ok(!set.includes('2026-12-01'));
+  assert.equal(set.length, 12);
+  assert.equal(again.txs.length, 0);
+});
+
+test('materializar: from depois do end_date não regrava generated_until', () => {
+  const r = { ...rec, end_date: '2026-12-31', generated_until: '2027-10-15' };
+  const m = materialize(r, '2027-11-15', newId);
+  assert.deepEqual([m.txs.length, m.generated_until], [0, '2027-10-15']);
+});
+
+test('occurrences: regra diária antiga (desde 2012) ainda devolve a janela de 2026', () => {
+  const daily = { ...rec, frequency: 'daily', start_date: '2012-01-01' };
+  const o = occurrences(daily, '2026-10-01', '2026-10-05');
+  assert.deepEqual(o, ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05']);
+  const w = occurrences({ ...daily, frequency: 'weekly', interval_n: 2, start_date: '2000-01-03' }, '2026-10-01', '2026-10-31');
+  assert.ok(w.length >= 2 && w.every((d) => (Date.parse(d) - Date.parse('2000-01-03')) / 86400000 % 14 === 0));
+  assert.deepEqual(occurrences({ ...rec, start_date: '2000-01-31' }, '2026-02-01', '2026-04-30'), ['2026-02-28', '2026-03-31', '2026-04-30']);
+  assert.deepEqual(occurrences({ ...rec, frequency: 'yearly', start_date: '1990-02-28' }, '2026-01-01', '2027-12-31'), ['2026-02-28', '2027-02-28']);
 });

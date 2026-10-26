@@ -5,13 +5,13 @@
   import TxForm from './TxForm.svelte';
   import Scope from './Scope.svelte';
 
-  const today = todayISO();
   const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const FILTERS = [['all', 'Todos'], ['pending', 'Pendentes'], ['paid', 'Efetivados']];
   const TOTAL_LABEL = { all: 'Previsto do mês', pending: 'A realizar', paid: 'Realizado' };
 
   const saved = (() => { try { return localStorage.getItem('financas.filter'); } catch { return null; } })();
-  let month = $state(monthOf(today));
+  let today = $state(todayISO()); // renova ao voltar para o app (virou o dia)
+  let month = $state(monthOf(todayISO()));
   let filter = $state(FILTERS.some(([k]) => k === saved) ? saved : 'all');
   let form = $state(null); // { tx } | {}
   let scopeFor = $state(null);
@@ -20,7 +20,8 @@
   const until = $derived(monthEnd(month));
   const bal = $derived(balances(app.accounts, app.transactions, until));
   const nowBal = $derived(balances(app.accounts, app.transactions, today));
-  const view = $derived(monthView(app.transactions, month, filter, today));
+  const archived = $derived(new Set(app.accounts.filter((a) => a.archived).map((a) => a.id)));
+  const view = $derived(monthView(app.transactions, month, filter, today, archived));
   const maxSpend = $derived(Math.max(1, ...view.spending.map((s) => s.cents)));
   const label = $derived(`${MONTHS[+month.slice(5, 7) - 1]} de ${month.slice(0, 4)}`);
   const hasAccounts = $derived(app.accounts.some((a) => !a.archived));
@@ -37,11 +38,16 @@
   const guard = (fn) => async (...a) => { error = ''; try { await fn(...a); } catch (e) { error = e.message; } };
   const toggle = guard((t) => setPaid(t, t.status !== 'paid'));
   const removeOne = guard(async (t) => {
-    if (t.recurrence_id) { scopeFor = t; return; }
-    if (confirm(`Excluir "${t.description}"?`)) await deleteTx(t);
+    if (t.recurrence_id && t.status === 'pending') { scopeFor = t; return; }
+    const nota = t.recurrence_id ? ' Já efetivado: exclui só este lançamento.' : '';
+    if (confirm(`Excluir "${t.description}"?${nota}`)) await deleteTx(t);
   });
   const removeScoped = guard(async (scope) => { const t = scopeFor; scopeFor = null; await deleteRecurring(t, scope); });
+  const refreshToday = () => (today = todayISO());
 </script>
+
+<svelte:window onfocus={refreshToday} />
+<svelte:document onvisibilitychange={refreshToday} />
 
 {#snippet row(t, late)}
   <li class:late class:done={t.status === 'paid'}>
@@ -54,7 +60,7 @@
     </div>
     <span class="num {t.kind === 'income' ? 'in' : t.kind === 'expense' ? 'out' : ''}">{sign(t)}{money(t.amount_cents)}</span>
     <div class="acts">
-      <button class="btn small ghost" onclick={() => toggle(t)}>{t.status === 'paid' ? 'Desfazer' : t.kind === 'income' ? 'Recebi' : 'Paguei'}</button>
+      <button class="btn small ghost" onclick={() => toggle(t)}>{t.status === 'paid' ? 'Desfazer' : t.kind === 'income' ? 'Recebi' : t.kind === 'transfer' ? 'Transferi' : 'Paguei'}</button>
       <button class="btn small ghost" onclick={() => (form = { tx: t })} aria-label="Editar {t.description}">✎</button>
       <button class="btn small ghost" onclick={() => removeOne(t)} aria-label="Excluir {t.description}">✕</button>
     </div>

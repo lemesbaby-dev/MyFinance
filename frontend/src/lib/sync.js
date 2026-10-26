@@ -75,7 +75,7 @@ async function pull(g) {
 
 let running = null;
 
-// Resolve { ok, offline, error }. Chamadas simultâneas compartilham a mesma execução.
+// Resolve { ok, offline, error }; ok só quando push e pull completaram. Chamadas simultâneas compartilham a mesma execução.
 export function sync() {
   running ??= (async () => {
     let result = { ok: true };
@@ -93,7 +93,7 @@ export function sync() {
     }
     offline = !!result.offline;
     try {
-      emit(await status({ syncing: false, error: result.error ?? '' }));
+      emit(await status({ syncing: false, ok: result.ok, error: result.error ?? '' }));
     } catch (e) {
       result = { ok: false, error: e.message };
     }
@@ -112,6 +112,8 @@ export function syncSoon(ms = 1500) {
 // O que a interface usa para gravar: local primeiro, rede depois.
 export const save = async (kind, id, data) => (await db.save(kind, id, data), emit(await status()), syncSoon());
 export const remove = async (kind, id) => (await db.remove(kind, id), emit(await status()), syncSoon());
+// Várias gravações atômicas, um único aviso de status. Ver db.saveMany para o formato dos itens.
+export const saveMany = async (items) => (await db.saveMany(items), emit(await status()), syncSoon());
 
 // Sincroniza ao abrir, ao voltar a rede e ao voltar para o app.
 export function startAutoSync() {

@@ -3,6 +3,7 @@
   import { parseMoney, isoToday } from './lib/format.js';
   import { MAX_INSTALLMENTS } from './lib/finance.js';
   import Scope from './Scope.svelte';
+  import { dialog } from './lib/a11y.js';
 
   // tx = lançamento existente (edição); sem tx = novo.
   let { tx = null, onclose } = $props();
@@ -60,13 +61,13 @@
     e.preventDefault();
     let f;
     try { f = fields(); } catch (err) { error = err.message; return; }
-    if (editing && recurring) { askScope = true; return; }
+    if (editing && recurring && tx.status === 'pending') { askScope = true; return; } // paga: só esta, sem perguntar
     run(async () => {
       if (editing) return saveTx(tx.id, paidFields(f));
       if (kind !== 'transfer' && repeat !== 'none') {
         return createRecurrence({ ...f, frequency: repeat, interval_n: 1, start_date: date });
       }
-      if (kind !== 'transfer' && installments > 1) return createInstallments(f, Number(installments));
+      if (kind === 'expense' && installments > 1) return createInstallments(f, Number(installments));
       return saveTx(null, paidFields(f));
     });
   }
@@ -78,10 +79,11 @@
 </script>
 
 <div class="scrim" role="presentation" onclick={onclose}></div>
-<form class="sheet" onsubmit={submit} aria-label={editing ? 'Editar lançamento' : 'Novo lançamento'}>
+<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+<form class="sheet" role="dialog" aria-modal="true" use:dialog={onclose} onsubmit={submit} aria-label={editing ? 'Editar lançamento' : 'Novo lançamento'}>
   <div class="seg" role="group" aria-label="Tipo">
     {#each KINDS as [k, label]}
-      <button type="button" class:on={kind === k} aria-pressed={kind === k} onclick={() => { kind = k; categoryId = ''; }}>{label}</button>
+      <button type="button" class:on={kind === k} aria-pressed={kind === k} onclick={() => { kind = k; categoryId = ''; installments = 1; repeat = 'none'; }}>{label}</button>
     {/each}
   </div>
 
@@ -113,7 +115,7 @@
   {#if editing || (repeat === 'none' && installments <= 1)}
     <label class="check"><input type="checkbox" bind:checked={done} /> {kind === 'income' ? 'Já recebi' : kind === 'transfer' ? 'Já transferi' : 'Já paguei'}</label>
   {/if}
-  {#if recurring}<p class="muted small">Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.</p>{/if}
+  {#if recurring}<p class="muted small">{tx.status === 'paid' ? 'Faz parte de uma repetição, mas já foi efetivado: a mudança vale só para este lançamento.' : 'Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.'}</p>{/if}
 
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="actions">

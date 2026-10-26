@@ -2,16 +2,18 @@
   import { app, saveAccount, deleteAccount } from './lib/app.svelte.js';
   import { balances, monthEnd, monthOf, todayISO } from './lib/finance.js';
   import { money, parseMoney } from './lib/format.js';
+  import { dialog } from './lib/a11y.js';
 
   const TYPES = { checking: 'Conta corrente', cash: 'Dinheiro', savings: 'Poupança', investment: 'Investimento' };
-  const today = todayISO();
 
+  let today = $state(todayISO()); // renova ao voltar para o app (virou o dia)
+  let busy = $state(false);
   let form = $state(null); // { id?, name, type, balance, archived }
   let error = $state('');
   let showArchived = $state(false);
 
   const bal = $derived(balances(app.accounts, app.transactions, monthEnd(monthOf(today))));
-  const by = $derived(Object.fromEntries(bal.accounts.map((a) => [a.id, a])));
+  const by = $derived(Object.fromEntries(bal.all.map((a) => [a.id, a])));
   const list = $derived(app.accounts.filter((a) => showArchived || !a.archived).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
   const archivedCount = $derived(app.accounts.filter((a) => a.archived).length);
 
@@ -27,17 +29,24 @@
     const cents = parseMoney(form.balance);
     if (cents === null) { error = 'Saldo inválido. Exemplo: 1.250,00'; return; }
     if (!form.name.trim()) { error = 'Informe o nome da conta.'; return; }
+    busy = true;
     try {
       await saveAccount(form.id ?? null, { name: form.name, type: form.type, initial_balance_cents: cents, archived: form.archived });
       form = null;
-    } catch (err) { error = err.message; }
+    } catch (err) { error = err.message; } finally { busy = false; }
   }
 
   async function remove() {
     if (!confirm(`Excluir a conta "${form.name}"?`)) return;
-    try { await deleteAccount(form.id); form = null; } catch (err) { error = err.message; }
+    busy = true;
+    try { await deleteAccount(form.id); form = null; } catch (err) { error = err.message; } finally { busy = false; }
   }
+
+  const refreshToday = () => (today = todayISO());
 </script>
+
+<svelte:window onfocus={refreshToday} />
+<svelte:document onvisibilitychange={refreshToday} />
 
 <section class="pad">
   <h2>Contas</h2>
@@ -61,7 +70,8 @@
 
 {#if form}
   <div class="scrim" role="presentation" onclick={() => (form = null)}></div>
-  <form class="sheet" onsubmit={submit} aria-label="Conta">
+  <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+  <form class="sheet" role="dialog" aria-modal="true" use:dialog={() => (form = null)} onsubmit={submit} aria-label="Conta">
     <h3>{form.id ? 'Editar conta' : 'Nova conta'}</h3>
     <label class="field"><span>Nome</span><input bind:value={form.name} maxlength="200" required /></label>
     <label class="field"><span>Tipo</span>
@@ -71,8 +81,8 @@
     {#if error}<p class="err" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="button" class="btn ghost" onclick={() => (form = null)}>Cancelar</button>
-      <button class="btn">Salvar</button>
+      <button class="btn" disabled={busy}>Salvar</button>
     </div>
-    {#if form.id}<p><button type="button" class="btn small ghost" onclick={remove}>Excluir conta</button></p>{/if}
+    {#if form.id}<p><button type="button" class="btn small ghost" onclick={remove} disabled={busy}>Excluir conta</button></p>{/if}
   </form>
 {/if}

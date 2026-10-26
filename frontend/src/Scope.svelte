@@ -1,10 +1,11 @@
 <script>
   // "Só esta / Esta e as próximas / Todas as pendentes" para lançamentos que vêm de uma recorrência.
+  import { dialog } from './lib/a11y.js';
   let { verb = 'Aplicar', onpick, onclose } = $props();
 </script>
 
 <div class="scrim" role="presentation" onclick={onclose}></div>
-<div class="sheet" role="dialog" aria-label="{verb} em quais lançamentos?">
+<div class="sheet" role="dialog" aria-modal="true" use:dialog={onclose} aria-label="{verb} em quais lançamentos?">
   <h3>{verb} em quais lançamentos?</h3>
   <p class="muted small">Este lançamento faz parte de uma repetição.</p>
   <div class="stack">

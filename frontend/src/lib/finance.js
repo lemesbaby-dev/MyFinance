@@ -79,11 +79,26 @@ function nth(r, n) {
   }
 }
 
+// Primeiro n que vale testar para a janela começar em `from` (recua 1 por segurança).
+// Evita que regras diárias antigas esgotem o teto andando desde o início.
+function startN(r, from) {
+  if (from <= r.start_date) return 0;
+  const a = parseISO(r.start_date), b = parseISO(from);
+  let n;
+  if (r.frequency === 'daily' || r.frequency === 'weekly') {
+    const days = (Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000;
+    n = Math.floor(days / ((r.frequency === 'daily' ? 1 : 7) * r.interval_n));
+  } else {
+    n = Math.floor(((b.y - a.y) * 12 + (b.m - a.m)) / ((r.frequency === 'monthly' ? 1 : 12) * r.interval_n));
+  }
+  return Math.max(0, n - 1);
+}
+
 /** Datas da regra com from <= data <= to, respeitando end_date. */
 export function occurrences(rule, from, to) {
   validateRule(rule);
   const out = [];
-  for (let n = 0; n < MAX_OCCURRENCES; n++) {
+  for (let i = 0, n = startN(rule, from); i < MAX_OCCURRENCES; i++, n++) {
     const d = nth(rule, n);
     if (d > to || (rule.end_date && d > rule.end_date)) break;
     if (d >= from) out.push(d);
@@ -109,7 +124,7 @@ export const txDoc = (f) => ({
 export function materialize(rec, horizonISO, newId) {
   if (!rec.active) return { txs: [], generated_until: rec.generated_until ?? null };
   const from = rec.generated_until ? addDays(rec.generated_until, 1) : rec.start_date;
-  if (from > horizonISO) return { txs: [], generated_until: rec.generated_until ?? null };
+  if (from > horizonISO || (rec.end_date && from > rec.end_date)) return { txs: [], generated_until: rec.generated_until ?? null };
   const txs = occurrences(rec, from, horizonISO).map((date) => ({
     id: newId(),
     data: txDoc({
@@ -149,10 +164,12 @@ function movements(t) {
 /**
  * Saldo atual  = saldo inicial + tudo que já foi pago/recebido.
  * Saldo previsto até `until` = atual + pendentes com vencimento <= until (inclui atrasados).
+ * Calcula TODAS as contas (uma transferência para conta arquivada não perde o crédito), mas os totais
+ * e `accounts` só têm as ativas; `all` traz também as arquivadas (com `archived`) para exibir o valor real.
  */
 export function balances(accounts, txs, until) {
   const by = new Map(
-    accounts.filter((a) => !a.archived).map((a) => [a.id, { id: a.id, name: a.name, type: a.type, current_cents: a.initial_balance_cents, projected_cents: a.initial_balance_cents }]),
+    accounts.map((a) => [a.id, { id: a.id, name: a.name, type: a.type, archived: !!a.archived, current_cents: a.initial_balance_cents, projected_cents: a.initial_balance_cents }]),
   );
   for (const t of txs) {
     const paid = t.status === 'paid';
@@ -164,8 +181,10 @@ export function balances(accounts, txs, until) {
       b.projected_cents += d;
     }
   }
-  const list = [...by.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const all = [...by.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const list = all.filter((a) => !a.archived);
   return {
+    all,
     accounts: list,
     current_cents: list.reduce((s, a) => s + a.current_cents, 0),
     projected_cents: list.reduce((s, a) => s + a.projected_cents, 0),
@@ -178,8 +197,10 @@ export function balances(accounts, txs, until) {
  * filter: 'all' | 'pending' | 'paid'. Muda a lista, os totais e os gastos por categoria;
  * os saldos (balances) não dependem dele. Transferência aparece na lista mas fica fora dos totais.
  * `overdue`: pendentes vencidos antes do mês exibido (só no mês atual/futuro e fora do filtro 'paid').
+ * `archived`: Set de ids de contas arquivadas; os lançamentos delas ficam de fora.
  */
-export function monthView(txs, month, filter, today) {
+export function monthView(allTxs, month, filter, today, archived = new Set()) {
+  const txs = archived.size ? allTxs.filter((t) => !archived.has(t.account_id)) : allTxs;
   const order = (a, b) => a.date.localeCompare(b.date) || a.description.localeCompare(b.description, 'pt-BR');
   const keep = (t) => filter === 'all' || t.status === filter;
   const rows = txs.filter((t) => monthOf(t.date) === month && keep(t)).sort(order);

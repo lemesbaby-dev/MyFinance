@@ -3,7 +3,7 @@
   import { api, hasSession, clearSession, setUnauthorizedHandler } from './lib/api.js';
   import * as db from './lib/db.js';
   import { sync } from './lib/sync.js';
-  import { app, init } from './lib/app.svelte.js';
+  import { app, init, idle, clearApp } from './lib/app.svelte.js';
   import Login from './Login.svelte';
   import FirstRun from './FirstRun.svelte';
   import Month from './Month.svelte';
@@ -43,14 +43,21 @@
     await boot(pendingUser);
   }
 
+  function startFresh() {
+    if (confirm('Se você já usa o app em outro aparelho, começar do zero pode duplicar contas e categorias quando os dados chegarem. Começar do zero mesmo assim?')) forceFirst = true;
+  }
+
   async function logout() {
     await sync().catch(() => {});
     const n = await db.pending();
     if (n > 0 && !confirm(`${n} alteração(ões) ainda não foram enviadas. Elas ficam guardadas neste aparelho até você entrar de novo com esta mesma conta. Sair mesmo assim?`)) return;
     try { await api.logout(); } catch { /* sem rede: encerra só localmente */ }
     clearSession();
-    if (n === 0) await db.wipe(); // aparelho compartilhado: não deixa dados para trás
     app.ready = false;
+    forceFirst = false;
+    await idle(); // extend/reload em andamento não podem regravar depois do wipe
+    if (n === 0) await db.wipe(); // aparelho compartilhado: não deixa dados para trás
+    clearApp();
     needLogin = true;
   }
 
@@ -85,7 +92,7 @@
     {/if}
     <main>
       {#if waitingData}
-        <p class="pad muted">Buscando seus dados… <button class="btn small ghost" onclick={() => (forceFirst = true)}>Começar do zero</button></p>
+        <p class="pad muted">Buscando seus dados… <button class="btn small ghost" onclick={startFresh}>Começar do zero</button></p>
       {/if}
       {#if tab === 'month'}<Month />
       {:else if tab === 'accounts'}<Accounts />

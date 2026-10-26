@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Formato dos documentos sincronizados (ids são UUIDs gerados no app).
@@ -80,7 +81,7 @@ func text(name, v string, max int, required bool) error {
 	if required && strings.TrimSpace(v) == "" {
 		return errors.New(name + " é obrigatório")
 	}
-	if len(v) > max {
+	if utf8.RuneCountInString(v) > max { // runas, como o maxlength do cliente
 		return errors.New(name + " muito longo")
 	}
 	return nil

@@ -3,17 +3,13 @@ const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' 
 /** centavos (inteiro) -> "R$ 1.234,56" */
 export const money = (cents) => brl.format((cents ?? 0) / 100);
 
-/** "1.234,56" | "1234.56" | "12" -> centavos (inteiro). Devolve null se inválido. */
+/** "1.234,56" | "1234.56" | "1.000" | "12" -> centavos (inteiro). Devolve null se inválido (ex.: "0,001", "1.23.4"). */
 export function parseMoney(input) {
-  let s = String(input).replace(/R\$|\s/g, '');
-  if (!s) return null;
+  const s = String(input).replace(/R\$|\s/g, '');
   const neg = s.startsWith('-');
-  s = s.replace('-', '');
-  const m = s.match(/^(.*?)[.,](\d{1,2})$/);
-  const intPart = (m ? m[1] : s).replace(/[.,]/g, '');
-  const frac = (m ? m[2] : '').padEnd(2, '0');
-  if (!/^\d*$/.test(intPart) || !/^\d{2}$/.test(frac)) return null;
-  const v = parseInt(intPart || '0', 10) * 100 + parseInt(frac, 10);
+  const m = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:[.,](\d{1,2}))?$/.exec(neg ? s.slice(1) : s);
+  if (!m) return null;
+  const v = parseInt(m[1].replace(/\./g, ''), 10) * 100 + parseInt((m[2] ?? '').padEnd(2, '0'), 10);
   return neg ? -v : v;
 }
 

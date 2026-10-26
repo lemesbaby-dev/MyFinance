@@ -82,6 +82,21 @@ export function remove(kind, id) {
   });
 }
 
+// Várias gravações numa transação só (tudo ou nada). item = {kind,id,data} ou {kind,id,remove:true}.
+export function saveMany(items) {
+  return tx(['entities', 'outbox'], 'readwrite', (s) => {
+    for (const { kind, id, data, remove: del } of items) {
+      if (del) {
+        s.entities.delete([kind, id]);
+        s.outbox.add({ op_id: uuidv7(), kind, id, action: 'delete' });
+      } else {
+        s.entities.put({ kind, id, data });
+        s.outbox.add({ op_id: uuidv7(), kind, id, action: 'upsert', data });
+      }
+    }
+  });
+}
+
 // Descarta só a cópia local (sem enviar nada): usado quando o servidor recusa ou já tem o item.
 export const dropLocal = (kind, id) => tx(['entities'], 'readwrite', (s) => s.entities.delete([kind, id]));
 

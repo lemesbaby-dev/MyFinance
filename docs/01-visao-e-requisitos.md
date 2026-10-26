@@ -40,7 +40,7 @@ Tela principal navega por mês (‹ out/2026 ›). Um seletor segmentado muda **
 | **Efetivados** | só `paid` | *realizado* | só pagos |
 
 **Cartões de saldo no topo não mudam com o seletor** (sempre fixos e sem ambiguidade):
-- **Saldo atual** = só efetivados até hoje.
+- **Saldo hoje** (saldo atual) = saldo inicial + tudo que está efetivado, independente da data do lançamento.
 - **Saldo previsto** até o fim do mês exibido = atual + pendentes até essa data.
 
 Detalhes a decidir (ver perguntas):

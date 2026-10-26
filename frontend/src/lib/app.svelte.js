@@ -20,24 +20,59 @@ const doc = (o) => {
   return d;
 };
 
-export async function reload() {
+// Item de gravação em lote (ver db.saveMany).
+const put = (kind, id, data) => ({ kind, id, data });
+const del = (kind, id) => ({ kind, id, remove: true });
+
+async function load() {
   const [accounts, categories, recurrences, transactions, rejected] = await Promise.all([
     db.list('account'), db.list('category'), db.list('recurrence'), db.list('transaction'), db.getMeta('rejected', []),
   ]);
   Object.assign(app, { accounts, categories, recurrences, transactions, rejected });
 }
 
-// Cria as ocorrências que faltam (janela de 12 meses que rola a cada abertura/sincronização).
-export async function extendRecurrences() {
-  const h = horizon(todayISO());
-  for (const rec of app.recurrences) {
-    const m = materialize(rec, h, uuidv7);
-    if (m.generated_until === (rec.generated_until ?? null)) continue;
-    for (const t of m.txs) await sync.save('transaction', t.id, t.data);
-    await sync.save('recurrence', rec.id, { ...doc(rec), generated_until: m.generated_until });
-  }
-  await reload();
+// Recarrega o estado sem concorrência: uma execução em andamento + no máximo uma pendente.
+let reloading = null;
+let again = false;
+export function reload() {
+  if (reloading) { again = true; return reloading; }
+  reloading = (async () => {
+    try { do { again = false; await load(); } while (again); } finally { reloading = null; }
+  })();
+  return reloading;
 }
+
+// Operações que leem-e-regravam recorrências rodam uma por vez (senão duas extensões geram datas duplicadas).
+let queue = Promise.resolve();
+const serial = (fn) => {
+  const p = queue.then(fn);
+  queue = p.catch(() => {});
+  return p;
+};
+
+// Espera o que estiver em andamento (usado antes de apagar a cópia local no logout).
+export async function idle() {
+  await queue;
+  await reloading;
+}
+
+// Logout: nada do usuário anterior pode sobrar na memória.
+export function clearApp() {
+  Object.assign(app, { ready: false, synced: false, user: null, accounts: [], categories: [], recurrences: [], transactions: [], rejected: [] });
+}
+
+// Cria as ocorrências que faltam (janela de 12 meses que rola a cada abertura/sincronização).
+export const extendRecurrences = () => serial(async () => {
+  const h = horizon(todayISO());
+  const items = [];
+  for (const rec of await db.list('recurrence')) { // lê do banco: a cópia em memória pode estar velha
+    const m = materialize(rec, h, uuidv7);
+    if ((m.generated_until ?? '') <= (rec.generated_until ?? '')) continue; // nunca regrava com valor menor/igual
+    items.push(...m.txs.map((t) => put('transaction', t.id, t.data)), put('recurrence', rec.id, { ...doc(rec), generated_until: m.generated_until }));
+  }
+  if (items.length) await sync.saveMany(items);
+  await reload();
+});
 
 let started = false;
 
@@ -60,7 +95,7 @@ function listen() {
   sync.onStatus(async (s) => {
     app.status = s;
     await reload();
-    if (s.syncing === false && !s.error) {
+    if (s.syncing === false && s.ok) { // ok = push e pull completos (offline não conta)
       if (!app.synced) { app.synced = true; await db.setMeta('synced', true); }
       await extendRecurrences(); // chegaram recorrências de outro aparelho
     }
@@ -94,10 +129,12 @@ export const saveCategory = async (id, f) => {
 
 // O servidor não cascateia: o app solta as referências antes de excluir.
 export async function deleteCategory(id) {
-  for (const t of app.transactions.filter((x) => x.category_id === id)) await sync.save('transaction', t.id, { ...doc(t), category_id: null });
-  for (const r of app.recurrences.filter((x) => x.category_id === id)) await sync.save('recurrence', r.id, { ...doc(r), category_id: null });
-  for (const c of app.categories.filter((x) => x.parent_id === id)) await sync.save('category', c.id, { ...doc(c), parent_id: null });
-  await sync.remove('category', id);
+  await sync.saveMany([
+    ...app.transactions.filter((x) => x.category_id === id).map((t) => put('transaction', t.id, { ...doc(t), category_id: null })),
+    ...app.recurrences.filter((x) => x.category_id === id).map((r) => put('recurrence', r.id, { ...doc(r), category_id: null })),
+    ...app.categories.filter((x) => x.parent_id === id).map((c) => put('category', c.id, { ...doc(c), parent_id: null })),
+    del('category', id),
+  ]);
   await reload();
 }
 
@@ -116,67 +153,79 @@ export async function setPaid(t, paid) {
 
 export async function createInstallments(base, n) {
   const group = uuidv7();
-  for (const p of splitInstallments(base.amount_cents, n, base.date)) {
-    await sync.save('transaction', uuidv7(), txDoc({
-      ...base, amount_cents: p.amount_cents, date: p.date, status: 'pending', paid_at: null,
-      installment_no: p.no, installment_total: p.total, installment_group: group,
-    }));
-  }
+  await sync.saveMany(splitInstallments(base.amount_cents, n, base.date).map((p) => put('transaction', uuidv7(), txDoc({
+    ...base, amount_cents: p.amount_cents, date: p.date, status: 'pending', paid_at: null,
+    installment_no: p.no, installment_total: p.total, installment_group: group,
+  }))));
   await reload();
 }
 
-export async function createRecurrence(f) {
-  const id = uuidv7();
-  const rec = { kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
-    category_id: f.category_id ?? null, frequency: f.frequency, interval_n: f.interval_n ?? 1, start_date: f.start_date,
-    end_date: null, active: true, generated_until: null };
-  await sync.save('recurrence', id, rec);
+// Regra nova + ocorrências numa transação só. `rec.generated_until` é o ponto de partida (null = desde o início).
+// `extra` são itens que precisam ir junto (atomicidade); `id` permite religar algo à regra antes de ela existir.
+async function addRecurrence(rec, extra = [], id = uuidv7()) {
   const m = materialize({ ...rec, id }, horizon(todayISO()), uuidv7);
-  for (const t of m.txs) await sync.save('transaction', t.id, t.data);
-  await sync.save('recurrence', id, { ...rec, generated_until: m.generated_until });
-  await reload();
+  await sync.saveMany([
+    ...extra,
+    ...m.txs.map((t) => put('transaction', t.id, t.data)),
+    put('recurrence', id, { ...rec, generated_until: m.generated_until }),
+  ]);
 }
+
+export const createRecurrence = (f) => serial(async () => {
+  await addRecurrence({ kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
+    category_id: f.category_id ?? null, frequency: f.frequency, interval_n: f.interval_n ?? 1, start_date: f.start_date,
+    end_date: null, active: true, generated_until: null });
+  await reload();
+});
 
 const pendingOf = (recId) => app.transactions.filter((t) => t.recurrence_id === recId && t.status === 'pending');
 const RECURRING_FIELDS = ['description', 'amount_cents', 'account_id', 'category_id'];
 
 /**
  * Edita um lançamento que veio de uma recorrência.
- *  one       só esta ocorrência
- *  all       a regra e todas as ocorrências pendentes
- *  following esta e as próximas: a regra antiga termina no dia anterior e nasce uma nova a partir desta
+ *  one       só esta ocorrência (sempre, se ela já foi paga)
+ *  all       a regra e as ocorrências pendentes (só os campos compartilhados que mudaram)
+ *  following esta e as próximas: a regra antiga termina no dia anterior e nasce uma cópia a partir desta
+ * A ocorrência clicada recebe sempre todas as `changes`.
  */
-export async function editRecurring(tx, scope, changes) {
+export const editRecurring = (tx, scope, changes) => serial(async () => {
   const rec = app.recurrences.find((r) => r.id === tx.recurrence_id);
-  if (scope === 'one' || !rec) return saveTx(tx.id, changes);
-  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes).map((k) => [k, changes[k]]));
+  if (scope === 'one' || !rec || tx.status === 'paid') return saveTx(tx.id, changes);
+  const base = doc(app.transactions.find((t) => t.id === tx.id) ?? tx);
+  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (tx[k] ?? null)).map((k) => [k, changes[k]]));
+  const clicked = (extra) => put('transaction', tx.id, txDoc({ ...base, ...changes, ...extra }));
   if (scope === 'following' && tx.date > rec.start_date) {
-    await sync.save('recurrence', rec.id, { ...doc(rec), end_date: addDays(tx.date, -1) });
-    for (const t of pendingOf(rec.id).filter((t) => t.date >= tx.date)) await sync.remove('transaction', t.id);
-    await createRecurrence({ ...doc(rec), ...shared, frequency: rec.frequency, interval_n: rec.interval_n, start_date: tx.date });
-    return;
+    const nid = uuidv7();
+    await addRecurrence({ ...doc(rec), ...shared, generated_until: tx.date }, [
+      put('recurrence', rec.id, { ...doc(rec), end_date: addDays(tx.date, -1) }),
+      ...pendingOf(rec.id).filter((t) => t.date > tx.date && t.id !== tx.id).map((t) => del('transaction', t.id)),
+      clicked({ recurrence_id: nid }),
+    ], nid);
+  } else { // 'all' (ou 'following' na primeira ocorrência, que é a regra inteira)
+    const items = [clicked()];
+    if (Object.keys(shared).length) {
+      items.push(put('recurrence', rec.id, { ...doc(rec), ...shared }),
+        ...pendingOf(rec.id).filter((t) => t.id !== tx.id).map((t) => put('transaction', t.id, { ...doc(t), ...shared })));
+    }
+    await sync.saveMany(items);
   }
-  // 'all' (ou 'following' na primeira ocorrência, que é a regra inteira)
-  await sync.save('recurrence', rec.id, { ...doc(rec), ...shared });
-  for (const t of pendingOf(rec.id)) await sync.save('transaction', t.id, { ...doc(t), ...shared });
-  if (tx.status === 'pending') await saveTx(tx.id, changes); // a data e o resto desta ocorrência
   await reload();
-}
+});
 
 /** Exclui um lançamento de recorrência: só esta, esta e as próximas, ou todas as pendentes (e encerra a regra). */
-export async function deleteRecurring(tx, scope) {
+export const deleteRecurring = (tx, scope) => serial(async () => {
   const rec = app.recurrences.find((r) => r.id === tx.recurrence_id);
-  if (scope === 'one' || !rec) {
+  if (scope === 'one' || !rec || tx.status === 'paid') {
     await sync.remove('transaction', tx.id);
   } else {
     const from = scope === 'following' ? tx.date : '0000-01-01';
-    for (const t of pendingOf(rec.id).filter((t) => t.date >= from)) await sync.remove('transaction', t.id);
+    const gone = pendingOf(rec.id).filter((t) => t.date >= from || t.id === tx.id);
     const end = scope === 'following' ? addDays(tx.date, -1) : null;
-    if (end && end >= rec.start_date) await sync.save('recurrence', rec.id, { ...doc(rec), end_date: end });
-    else await sync.save('recurrence', rec.id, { ...doc(rec), active: false });
+    const ended = end && end >= rec.start_date ? { end_date: end } : { active: false };
+    await sync.saveMany([...gone.map((t) => del('transaction', t.id)), put('recurrence', rec.id, { ...doc(rec), ...ended })]);
   }
   await reload();
-}
+});
 
 export async function deleteTx(tx) {
   await sync.remove('transaction', tx.id);

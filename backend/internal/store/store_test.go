@@ -150,3 +150,12 @@ func TestRecorrenciaGeneratedUntil(t *testing.T) {
 		t.Errorf("generated_until: %+v", res)
 	}
 }
+
+func TestTextoContaRunasNaoBytes(t *testing.T) {
+	if err := text("nome", strings.Repeat("ç", maxText), maxText, true); err != nil {
+		t.Errorf("200 runas (400 bytes) deveriam passar: %v", err)
+	}
+	if err := text("nome", strings.Repeat("ç", maxText+1), maxText, true); err == nil {
+		t.Error("201 runas deveriam ser recusadas")
+	}
+}

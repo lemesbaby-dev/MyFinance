@@ -1,9 +1,11 @@
 <script>
   import { app, saveCategory, deleteCategory } from './lib/app.svelte.js';
+  import { dialog } from './lib/a11y.js';
 
   const KINDS = [['expense', 'Despesas'], ['income', 'Receitas']];
   let form = $state(null); // { id?, name, kind, parent_id }
   let error = $state('');
+  let busy = $state(false);
 
   const tops = (kind) => app.categories.filter((c) => c.kind === kind && !c.parent_id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const kids = (id) => app.categories.filter((c) => c.parent_id === id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -19,15 +21,17 @@
   async function submit(e) {
     e.preventDefault();
     if (!form.name.trim()) { error = 'Informe o nome.'; return; }
+    busy = true;
     try {
       await saveCategory(form.id ?? null, { name: form.name, kind: form.kind, parent_id: hasKids ? null : form.parent_id });
       form = null;
-    } catch (err) { error = err.message; }
+    } catch (err) { error = err.message; } finally { busy = false; }
   }
 
   async function remove() {
     if (!confirm(`Excluir "${form.name}"? Os lançamentos dela ficam sem categoria.`)) return;
-    try { await deleteCategory(form.id); form = null; } catch (err) { error = err.message; }
+    busy = true;
+    try { await deleteCategory(form.id); form = null; } catch (err) { error = err.message; } finally { busy = false; }
   }
 </script>
 
@@ -56,7 +60,8 @@
 
 {#if form}
   <div class="scrim" role="presentation" onclick={() => (form = null)}></div>
-  <form class="sheet" onsubmit={submit} aria-label="Categoria">
+  <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+  <form class="sheet" role="dialog" aria-modal="true" use:dialog={() => (form = null)} onsubmit={submit} aria-label="Categoria">
     <h3>{form.id ? 'Editar categoria' : 'Nova categoria'}</h3>
     <div class="seg" role="group" aria-label="Tipo">
       {#each KINDS as [k, text]}
@@ -71,9 +76,9 @@
     {#if error}<p class="err" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="button" class="btn ghost" onclick={() => (form = null)}>Cancelar</button>
-      <button class="btn">Salvar</button>
+      <button class="btn" disabled={busy}>Salvar</button>
     </div>
-    {#if form.id}<p><button type="button" class="btn small ghost" onclick={remove}>Excluir categoria</button></p>{/if}
+    {#if form.id}<p><button type="button" class="btn small ghost" onclick={remove} disabled={busy}>Excluir categoria</button></p>{/if}
   </form>
 {/if}
 
