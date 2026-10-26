@@ -143,7 +143,7 @@
 <ToastHost />
 
 <style>
-  .shell main { max-width: 42rem; margin: 0 auto; padding-bottom: 8rem; }
+  .shell main { max-width: 42rem; margin: 0 auto; padding: var(--space-4) var(--space-4) calc(var(--tabbar-h) + var(--space-16)); display: flex; flex-direction: column; gap: var(--space-4); }
   .center { max-width: 26rem; margin: 0 auto; padding: 3rem 1.25rem; }
   .center h1 { font-size: 1.3rem; }
   .statusbar { margin: 0; padding: 0.4rem 1.25rem; font-size: 0.8125rem; text-align: center; background: color-mix(in srgb, var(--out) 12%, transparent); color: var(--ink); }

@@ -129,3 +129,11 @@ test('Toast: fila FIFO, um por vez, teto de 5, dismiss avança', () => {
   off();
   _resetToasts();
 });
+
+import { groupByDate, catOf } from './logic.js';
+test('groupByDate agrupa dias consecutivos; catOf é estável e 1..10', () => {
+  const g = groupByDate([{ date: 'a', id: 1 }, { date: 'a', id: 2 }, { date: 'b', id: 3 }]);
+  assert.deepEqual(g.map((x) => [x.date, x.items.length]), [['a', 2], ['b', 1]]);
+  assert.deepEqual(groupByDate([]), []);
+  for (const id of ['x', 'abc-123', '', null]) { const n = catOf(id); assert.ok(n >= 1 && n <= 10); assert.equal(n, catOf(id)); }
+});

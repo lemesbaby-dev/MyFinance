@@ -40,3 +40,21 @@ export function nextIndex(i, key, n) {
 
 /** Abre para cima só se não couber embaixo e couber em cima. rect = {top, bottom} do gatilho. */
 export const menuSide = (rect, menuH, vh) => (rect.bottom + menuH > vh && rect.top > menuH ? 'up' : 'down');
+
+/** Agrupa linhas já ordenadas por `date` mantendo a ordem: [{date, items}]. */
+export function groupByDate(rows) {
+  const out = [];
+  for (const r of rows) {
+    const g = out[out.length - 1];
+    if (g?.date === r.date) g.items.push(r);
+    else out.push({ date: r.date, items: [r] });
+  }
+  return out;
+}
+
+/** Cor (1..10) estável de uma categoria a partir do id: não há seletor de cor, o campo `color` do modelo fica intocado. */
+export function catOf(id) {
+  let h = 0;
+  for (const c of String(id ?? '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return (h % 10) + 1;
+}
