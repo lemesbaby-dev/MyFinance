@@ -11,6 +11,7 @@
   import Accounts from './Accounts.svelte';
   import Categories from './Categories.svelte';
   import More from './More.svelte';
+  import ConfirmHost from './ui/ConfirmHost.svelte';
 
   const TABS = [['month', 'Mês'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['more', 'Mais']];
 
@@ -19,6 +20,8 @@
   let error = $state('');
   let blocked = $state(false); // sobraram alterações não enviadas de outra conta neste aparelho
   let forceFirst = $state(false);
+  let Design = $state(null); // /design: só em dev; o import dinâmico some do build de produção (DEV vira false)
+  if (import.meta.env.DEV && location.hash === '#/design') import('./Design.svelte').then((m) => (Design = m.default));
 
   // Com itens recusados pendentes o app abre normal: o aviso fica na aba Mais e não pode ser escondido pelos "primeiros passos".
   const showFirstRun = $derived(app.ready && app.accounts.length === 0 && app.rejected.length === 0 && (app.synced || forceFirst));
@@ -89,7 +92,9 @@
   onMount(() => { if (!needLogin) boot(); });
 </script>
 
-{#if needLogin}
+{#if Design}
+  <Design />
+{:else if needLogin}
   <Login onlogin={(u, state) => { needLogin = false; if (state === 'blocked') blocked = true; else boot(u); }} />
 {:else if blocked}
   <main class="center">
@@ -133,6 +138,7 @@
     </nav>
   </div>
 {/if}
+<ConfirmHost />
 
 <style>
   .shell main { max-width: 42rem; margin: 0 auto; padding-bottom: 8rem; }
