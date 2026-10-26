@@ -2,7 +2,7 @@
 
 Arquivos: `tokens.css` (3 camadas), `contraste.mjs` (mede WCAG + daltonismo; `node contraste.mjs`, exit 1 se falhar), `fontes.md`.
 
-## Nomes de hoje (frontend/src/app.css) → tokens
+## Nomes antigos (app.css, já removidos na Fase 4) → tokens
 
 | Hoje | Novo (semântico) | Claro / escuro |
 |---|---|---|
@@ -43,7 +43,7 @@ UI "Tema": Sistema (remove o atributo) / Claro / Escuro. UI "Cores para daltonis
 
 Persistência (localStorage, por dispositivo; try/catch, falha = padrão): `mf.theme` = `light|dark` (ausente = sistema) e `mf.cvd` = `on` (ausente = off).
 
-Anti-flash: script inline síncrono no `<head>` do `index.html`, antes do CSS (evita piscar claro/escuro e troca de paleta):
+Anti-flash: script síncrono no `<head>` do `index.html`, antes do CSS, hoje o arquivo externo `frontend/public/theme-init.js` (a CSP não aceita inline); mesma lógica:
 
 ```html
 <script>try{var d=document.documentElement,t=localStorage.getItem('mf.theme'),c=localStorage.getItem('mf.cvd');
