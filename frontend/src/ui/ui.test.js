@@ -69,3 +69,63 @@ test('dialog: foca ao abrir, Escape fecha, Tab prende, destroy devolve o foco', 
   act.destroy();
   assert.equal(doc.activeElement, opener);
 });
+
+// ---- compostos (Fase 3): lógica pura ----
+import { pct, catIndex, trailPct, rowState, nextIndex, menuSide, STATE_META } from './logic.js';
+import { toast, dismissToast, subscribeToast, _resetToasts } from './toast.js';
+
+test('barras: pct relativo, limites e entradas inválidas', () => {
+  assert.equal(pct(50, 200), 25);
+  assert.equal(pct(1, 3), 33.3);
+  assert.equal(pct(300, 200), 100);
+  assert.equal(pct(0, 200), 0);
+  assert.equal(pct(5, 0), 0);
+  assert.equal(pct(-5, 10), 0);
+});
+
+test('categoria: índice cai sempre em 1..10', () => {
+  assert.deepEqual([0, 1, 10, 11, 23, -1, undefined].map(catIndex), [1, 1, 10, 1, 3, 9, 1]);
+});
+
+test('trilha: parte efetivada do movimento; sem movimento = 0', () => {
+  assert.equal(trailPct(25000, 75000), 25);
+  assert.equal(trailPct(-300, 100), 75); // usa módulo: despesas efetivadas contam
+  assert.equal(trailPct(0, 0), 0);
+  assert.equal(trailPct(100, 0), 100);
+});
+
+test('ListRow: estado efetivado > atrasado > pendente; todo estado tem ícone e rótulo', () => {
+  assert.equal(rowState({ paid: true, date: '2020-01-01', today: '2026-10-26' }), 'paid');
+  assert.equal(rowState({ paid: false, date: '2026-10-25', today: '2026-10-26' }), 'overdue');
+  assert.equal(rowState({ paid: false, date: '2026-10-26', today: '2026-10-26' }), 'pending');
+  assert.equal(rowState({ paid: false }), 'pending');
+  for (const s of Object.values(STATE_META)) assert.ok(s.icon && s.label);
+});
+
+test('Menu: navegação circular por teclado e abertura para cima só se precisar', () => {
+  assert.equal(nextIndex(0, 'ArrowUp', 3), 2);
+  assert.equal(nextIndex(2, 'ArrowDown', 3), 0);
+  assert.equal(nextIndex(1, 'Home', 3), 0);
+  assert.equal(nextIndex(0, 'End', 3), 2);
+  assert.equal(nextIndex(0, 'ArrowDown', 0), -1);
+  assert.equal(menuSide({ top: 100, bottom: 144 }, 150, 800), 'down');
+  assert.equal(menuSide({ top: 700, bottom: 744 }, 150, 800), 'up');
+  assert.equal(menuSide({ top: 20, bottom: 64 }, 150, 100), 'down'); // sem espaço em cima também: fica embaixo
+});
+
+test('Toast: fila FIFO, um por vez, teto de 5, dismiss avança', () => {
+  _resetToasts();
+  const seen = [];
+  const off = subscribeToast((t) => seen.push(t?.msg ?? null));
+  const a = toast('a'); toast('b');
+  assert.equal(seen.at(-1), 'a');
+  dismissToast(a);
+  assert.equal(seen.at(-1), 'b');
+  dismissToast(9999); // id inexistente: nada
+  _resetToasts();
+  for (let i = 0; i < 9; i++) toast(`m${i}`);
+  assert.equal(seen.at(-1), 'm0'); // o que já aparecia é preservado
+  assert.ok(toast('x') > a);
+  off();
+  _resetToasts();
+});
