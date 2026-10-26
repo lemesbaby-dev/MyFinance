@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MyFinance · C Instrumento de precisão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* ===== TOKENS: 1 primitivos → 2 semânticos → 3 componente ===== */
+:root{
+  /* 1. PRIMITIVOS (únicos valores brutos) */
+  --ink-0:#05070A; --ink-50:#0A0C0F; --ink-100:#12161B; --ink-200:#1A2027; --ink-300:#262E38; --ink-500:#8B96A3; --ink-900:#E8EDF2;
+  --paper-0:#FFFFFF; --paper-50:#F4F5F7; --paper-100:#E6E9ED; --paper-300:#C3CAD2; --paper-600:#4F5B68; --paper-950:#0E1217;
+  --cyan-400:#38D0F0; --cyan-700:#00667F;
+  --green-400:#4ADE80; --green-700:#0B7A3B;
+  --red-400:#FF7A6B; --red-700:#C2331F;
+  --amber-400:#FFB020; --amber-800:#8F5A00;
+  --violet-400:#A78BFA; --violet-700:#6D4BD8;
+  /* categorias (10): Okabe-Ito estendida, distinguíveis p/ daltonismo; cada uma também leva letra */
+  --cat-1:#E69F00; --cat-2:#56B4E9; --cat-3:#009E73; --cat-4:#F0E442; --cat-5:#4C8DFF;
+  --cat-6:#E8601C; --cat-7:#CC79A7; --cat-8:#A78BFA; --cat-9:#A3D65C; --cat-10:#9AA4AE;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px;
+  --radius-1:2px; --radius-2:4px; --radius-3:8px;
+  --font-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --font-text:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --fs-xs:11px; --fs-sm:13px; --fs-md:15px; --fs-lg:20px; --fs-xl:32px;
+  --hair:1px; --tap:44px;
+}
+/* 2. SEMÂNTICOS — escuro é tema de 1ª classe */
+.theme-dark{
+  --bg:var(--ink-50); --surface:var(--ink-100); --surface-raised:var(--ink-200); --surface-sunken:var(--ink-0);
+  --border:var(--ink-300); --text:var(--ink-900); --text-muted:var(--ink-500);
+  --color-accent:var(--cyan-400); --on-accent:var(--ink-0);
+  --color-income:var(--green-400); --color-expense:var(--red-400); --color-transfer:var(--violet-400);
+  --color-forecast:var(--cyan-400); --color-overdue:var(--amber-400); --color-pending:var(--ink-500); --color-settled:var(--green-400);
+  --scrim:rgba(0,0,0,.6); color-scheme:dark;
+}
+.theme-light{
+  --bg:var(--paper-50); --surface:var(--paper-0); --surface-raised:var(--paper-0); --surface-sunken:var(--paper-100);
+  --border:var(--paper-300); --text:var(--paper-950); --text-muted:var(--paper-600);
+  --color-accent:var(--cyan-700); --on-accent:var(--paper-0);
+  --color-income:var(--green-700); --color-expense:var(--red-700); --color-transfer:var(--violet-700);
+  --color-forecast:var(--cyan-700); --color-overdue:var(--amber-800); --color-pending:var(--paper-600); --color-settled:var(--green-700);
+  --scrim:rgba(14,18,23,.45); color-scheme:light;
+}
+/* 3. COMPONENTE */
+.app{
+  --btn-h:32px; --btn-pad:var(--space-3); --btn-radius:var(--radius-2);
+  --row-gap:var(--space-3); --row-pad-y:var(--space-3); --row-border:var(--hair) solid var(--border);
+  --sheet-radius:var(--radius-3); --tabbar-h:56px; --gutter:var(--space-4);
+}
+
+/* ===== apresentação (fora do app) ===== */
+*{box-sizing:border-box;margin:0}
+body{font:14px var(--font-text);background:#20262d;color:#ccd;padding:24px}
+h1{font:700 16px var(--font-mono);color:#fff;margin-bottom:4px} .lead{color:#9aa;margin-bottom:24px;font-size:13px}
+h2{font:700 12px var(--font-mono);color:#7dd;letter-spacing:.08em;text-transform:uppercase;margin:32px 0 12px}
+.row{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+figure{display:flex;flex-direction:column;gap:6px}
+figcaption{font:11px var(--font-mono);color:#9aa}
+.phone{width:var(--w);height:720px;border:6px solid #000;border-radius:28px;overflow:hidden;position:relative;background:var(--bg)}
+.app{height:100%;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:var(--fs-md)/1.35 var(--font-text)}
+.scroll{flex:1;overflow:hidden;padding-bottom:var(--space-4)}
+
+/* ===== tipografia de dados ===== */
+.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums slashed-zero;letter-spacing:-.01em;white-space:nowrap}
+.label{font:500 var(--fs-xs)/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)}
+.money-xl{font-size:var(--fs-xl);font-weight:700;line-height:1}
+.money-md{font-size:var(--fs-md);font-weight:500}
+.money-sm{font-size:var(--fs-sm);font-weight:500}
+.pos{color:var(--color-income)} .neg{color:var(--color-expense)} .fc{color:var(--color-forecast)}
+.muted{color:var(--text-muted)}
+
+/* ===== barra de topo ===== */
+.top{display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) var(--gutter);min-height:52px;border-bottom:var(--row-border);background:var(--surface)}
+.top h3{font:700 var(--fs-md) var(--font-mono);letter-spacing:.02em}
+.monthnav{display:flex;align-items:center;gap:var(--space-1)}
+.ibtn{width:var(--tap);height:var(--tap);display:grid;place-items:center;background:none;border:0;color:var(--text);border-radius:var(--radius-2)}
+.ibtn svg,.tab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:square}
+.sync{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--gutter);font:500 var(--fs-xs) var(--font-mono);border-bottom:var(--row-border);background:var(--surface-sunken)}
+.sync i{width:8px;height:8px;background:var(--color-overdue);display:inline-block}
+.sync.ok i{background:var(--color-settled)}
+.sync b{margin-left:auto;color:var(--color-accent);font-weight:700;text-transform:uppercase}
+
+/* ===== hero hoje → previsto ===== */
+.hero{padding:var(--space-4) var(--gutter);background:var(--surface);border-bottom:var(--row-border)}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)}
+.hero-grid>div:last-child{text-align:right}
+.hero .money-xl{font-size:24px;margin-top:var(--space-2)}
+.track{position:relative;height:28px;margin:var(--space-3) 0 var(--space-2)}
+.track .rail{position:absolute;left:0;right:0;top:13px;height:2px;background:var(--border)}
+.track .ticks{position:absolute;left:0;right:0;top:9px;height:10px;background:repeating-linear-gradient(90deg,var(--border) 0 1px,transparent 1px 12.5%)}
+.track .span{position:absolute;top:11px;height:6px;background:var(--color-forecast)}
+.track .a,.track .b{position:absolute;top:6px;width:16px;height:16px;border:2px solid var(--color-forecast)}
+.track .a{background:var(--text);border-color:var(--text);transform:translateX(-50%)}
+.track .b{background:var(--surface);transform:translateX(-50%) rotate(45deg)}
+.delta{display:flex;justify-content:space-between;font:var(--fs-sm) var(--font-mono)}
+.delta span:first-child{color:var(--text-muted)}
+.mini{display:grid;grid-template-columns:1fr 1fr;border-bottom:var(--row-border)}
+.mini>div{padding:var(--space-3) var(--gutter);background:var(--surface)} .mini>div+div{border-left:var(--row-border)}
+.mini .num{margin-top:var(--space-2);display:block}
+
+/* ===== lista por dia ===== */
+.day{display:flex;justify-content:space-between;padding:var(--space-2) var(--gutter);background:var(--surface-sunken);border-bottom:var(--row-border);border-top:var(--row-border)}
+.tx{display:grid;grid-template-columns:20px 1fr auto;column-gap:var(--row-gap);align-items:center;padding:var(--row-pad-y) var(--gutter);border-bottom:var(--row-border);background:var(--bg);position:relative}
+.st{width:18px;height:18px;border:2px solid var(--color-pending);display:grid;place-items:center;font:700 12px/1 var(--font-mono)}
+.st.paid{background:var(--color-settled);border-color:var(--color-settled);color:var(--on-accent)}
+.st.late{border-color:var(--color-overdue);color:var(--color-overdue)}
+.tx .d{min-width:0} .tx .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tx .m{display:flex;align-items:center;gap:6px;font:var(--fs-xs) var(--font-mono);color:var(--text-muted);margin-top:3px;white-space:nowrap}
+.badge{font:700 10px/1 var(--font-mono);letter-spacing:.06em;padding:2px 4px;border:1px solid currentColor;text-transform:uppercase}
+.badge.late{color:var(--color-overdue)} .badge.pend{color:var(--text-muted)}
+.tx .r{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.tx.is-paid .t{color:var(--text-muted);font-weight:400}
+.sw{display:inline-grid;place-items:center;width:14px;height:14px;background:var(--c);color:#000;font:700 9px/1 var(--font-mono);border-radius:var(--radius-1);flex:none}
+.acts{display:flex;align-items:center;gap:2px}
+.btn{height:var(--btn-h);padding:0 var(--btn-pad);border:1px solid var(--color-accent);background:none;color:var(--color-accent);font:700 var(--fs-xs) var(--font-mono);letter-spacing:.06em;text-transform:uppercase;border-radius:var(--btn-radius)}
+.btn.primary{background:var(--color-accent);color:var(--on-accent)}
+.btn.ghost{border-color:var(--border);color:var(--text)}
+.btn.danger{background:var(--color-expense);border-color:var(--color-expense);color:var(--ink-0)}
+.btn.block{width:100%;height:var(--tap)}
+details.more{position:relative} details.more>summary{list-style:none;width:32px;height:var(--btn-h);display:grid;place-items:center;color:var(--text-muted);font:700 16px var(--font-mono);cursor:pointer}
+details.more>summary::-webkit-details-marker{display:none}
+.menu{position:absolute;right:0;top:34px;z-index:5;min-width:150px;background:var(--surface-raised);border:1px solid var(--color-accent);border-radius:var(--radius-2);box-shadow:0 8px 24px var(--scrim)}
+.menu div{padding:10px var(--space-3);font:500 var(--fs-sm) var(--font-mono);border-bottom:var(--row-border);min-height:40px}
+.menu div:last-child{border:0;color:var(--color-expense)}
+
+/* categorias barras */
+.sec{padding:var(--space-4) var(--gutter) var(--space-2)}
+.bar-row{display:grid;grid-template-columns:104px 1fr 48px;gap:var(--space-2);align-items:center;padding:6px var(--gutter);font:var(--fs-sm) var(--font-mono)}
+.bar-row .bar{height:12px;background:var(--surface-sunken);border:var(--row-border)}
+.bar-row .bar i{display:block;height:100%;background:var(--c)}
+.bar-row .nm{display:flex;gap:6px;align-items:center;overflow:hidden;white-space:nowrap}
+.bar-row .num{text-align:right}
+
+/* listas Contas/Categorias/Mais */
+.item{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) var(--gutter);border-bottom:var(--row-border);background:var(--bg)}
+.item .grow{flex:1;min-width:0}
+.item .sub{font:var(--fs-xs) var(--font-mono);color:var(--text-muted);margin-top:3px}
+.glyph{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--border);background:var(--surface);font:700 var(--fs-sm) var(--font-mono);flex:none}
+.big-sw{width:32px;height:32px;background:var(--c);color:#000;display:grid;place-items:center;font:700 14px var(--font-mono);border-radius:var(--radius-2);flex:none}
+.total{display:flex;justify-content:space-between;align-items:baseline;padding:var(--space-4) var(--gutter);background:var(--surface);border-bottom:var(--row-border)}
+.tag{margin-left:6px}
+.card{margin:var(--space-3) var(--gutter);padding:var(--space-3);background:var(--surface);border:var(--row-border);border-left:3px solid var(--color-accent)}
+.card p{font-size:var(--fs-sm);color:var(--text-muted);margin:6px 0 var(--space-3)}
+.card.err{border-left-color:var(--color-expense)}
+
+/* TabBar */
+.tabbar{display:grid;grid-template-columns:repeat(4,1fr);height:var(--tabbar-h);border-top:var(--row-border);background:var(--surface);flex:none}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text-muted);font:500 10px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;position:relative}
+.tab[aria-current]{color:var(--color-accent)}
+.tab[aria-current]::before{content:"";position:absolute;top:-1px;left:25%;right:25%;height:2px;background:var(--color-accent)}
+.fab{position:absolute;right:var(--gutter);bottom:calc(var(--tabbar-h) + var(--space-4));height:var(--tap);padding:0 var(--space-4);display:flex;align-items:center;gap:var(--space-2);background:var(--color-accent);color:var(--on-accent);font:700 var(--fs-sm) var(--font-mono);letter-spacing:.06em;border:0;border-radius:var(--radius-2);box-shadow:0 4px 16px var(--scrim)}
+.fab svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.5}
+
+/* Sheet + diálogo */
+.layer{position:absolute;inset:0;background:var(--scrim);display:flex;align-items:flex-end}
+.layer.center{align-items:center;padding:var(--gutter)}
+.sheet{width:100%;background:var(--surface-raised);border:1px solid var(--border);border-bottom:0;border-radius:var(--sheet-radius) var(--sheet-radius) 0 0;padding:var(--space-4) var(--gutter) var(--space-5);color:var(--text)}
+.sheet .grab{width:32px;height:3px;background:var(--border);margin:-4px auto var(--space-3)}
+.dialog{width:100%;color:var(--text);background:var(--surface-raised);border:1px solid var(--border);border-top:3px solid var(--color-expense);border-radius:var(--radius-2);padding:var(--space-4)}
+.dialog h4{font:700 var(--fs-md) var(--font-mono);margin-bottom:var(--space-2)} .dialog p{font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:var(--space-4)}
+.dialog .two{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)}
+.dialog .two .btn{height:var(--tap);font-size:var(--fs-xs)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--border);margin-bottom:var(--space-3)}
+.seg span{padding:10px 0;text-align:center;font:700 var(--fs-xs) var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)} .seg span+span{border-left:1px solid var(--border)}
+.seg .on{background:var(--color-expense);color:var(--ink-0)}
+.field{margin-bottom:var(--space-3)} .field .label{display:block;margin-bottom:6px}
+.inp{height:var(--tap);padding:0 var(--space-3);display:flex;align-items:center;justify-content:space-between;background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--radius-2);font-size:var(--fs-sm)}
+.inp.focus{border-color:var(--color-accent);box-shadow:0 0 0 1px var(--color-accent)}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)}
+.empty{margin:var(--space-6) var(--gutter);padding:var(--space-6) var(--space-4);border:1px dashed var(--border);text-align:center}
+.empty svg{width:40px;height:40px;stroke:var(--text-muted);fill:none;stroke-width:1.5;margin-bottom:var(--space-3)}
+.empty h4{font:700 var(--fs-md) var(--font-mono);margin-bottom:6px} .empty p{font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:var(--space-4)}
+</style>
+</head>
+<body>
+<h1>C · Instrumento de precisão</h1>
+<p class="lead">Dados fictícios. Escuro/claro por classe .theme-*. Um script mínimo só clona os templates nas 4 combinações 360/390 × claro/escuro; sem libs.</p>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3 7h16v13H3zM3 7l12-3v3M16 13h3"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 3h9l9 9-9 9-9-9z"/><circle cx="8" cy="8" r="1"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="i-l" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></symbol>
+<symbol id="i-r" viewBox="0 0 24 24"><path d="M10 6l6 6-6 6"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5"/></symbol>
+</defs></svg>
+
+<template id="mes">
+<div class="app">
+  <div class="top"><h3>MYFINANCE</h3><div class="monthnav"><button class="ibtn" aria-label="Mês anterior"><svg><use href="#i-l"/></svg></button><span class="num" style="font-weight:700">OUT/2026</span><button class="ibtn" aria-label="Próximo mês"><svg><use href="#i-r"/></svg></button></div></div>
+  <div class="sync"><i></i><span>OFFLINE · 3 PENDENTES · 1 NÃO ACEITA</span><b>Ver</b></div>
+  <div class="scroll">
+    <div class="hero">
+      <div class="hero-grid">
+        <div><span class="label">Saldo hoje</span><div class="num money-xl">R$ 8.412,70</div></div>
+        <div><span class="label fc">Previsto 31/10</span><div class="num money-xl fc">R$ 5.797,30</div></div>
+      </div>
+      <div class="track" role="img" aria-label="Do saldo de hoje, R$ 8.412,70, ao previsto, R$ 5.797,30: queda de R$ 2.615,40">
+        <div class="rail"></div><div class="ticks"></div><div class="span" style="left:57%;width:19%"></div>
+        <div class="b" style="left:57%"></div><div class="a" style="left:76%"></div>
+      </div>
+      <div class="delta"><span>Δ até o fim do mês</span><span class="num neg">−R$ 2.615,40</span></div>
+    </div>
+    <div class="mini">
+      <div><span class="label">A receber</span><span class="num money-md pos">+R$ 4.200,00</span></div>
+      <div><span class="label">A pagar</span><span class="num money-md neg">−R$ 6.815,40</span></div>
+    </div>
+    <div class="day"><span class="label">Atrasados · meses anteriores</span><span class="num money-sm neg">−R$ 189,90</span></div>
+    <div class="tx"><div class="st late">!</div><div class="d"><div class="t">Internet fibra</div><div class="m"><span class="badge late">Atrasado 12d</span><span class="sw" style="--c:var(--cat-5)">C</span>Casa</div></div><div class="r"><span class="num money-md neg">−R$ 189,90</span><div class="acts"><button class="btn">Efetivar</button><details class="more"><summary aria-label="Mais ações">⋯</summary></details></div></div></div>
+    <div class="day"><span class="label">Seg 26/10 · hoje</span><span class="num money-sm muted">−R$ 612,40</span></div>
+    <div class="tx"><div class="st late">!</div><div class="d"><div class="t">Aluguel</div><div class="m"><span class="badge late">Atrasado 1d</span><span class="sw" style="--c:var(--cat-5)">C</span>Nubank</div></div><div class="r"><span class="num money-md neg">−R$ 2.350,00</span><div class="acts"><button class="btn">Efetivar</button><details class="more" open><summary aria-label="Mais ações">⋯</summary><div class="menu"><div>Editar</div><div>Pular este mês</div><div>Excluir…</div></div></details></div></div></div>
+    <div class="tx is-paid"><div class="st paid">✓</div><div class="d"><div class="t">Mercado Zaffari</div><div class="m"><span class="sw" style="--c:var(--cat-3)">M</span>Mercado · Itaú</div></div><div class="r"><span class="num money-md neg">−R$ 612,40</span></div></div>
+    <div class="day"><span class="label">Qua 28/10</span><span class="num money-sm muted">+R$ 4.165,10</span></div>
+    <div class="tx"><div class="st"></div><div class="d"><div class="t">Spotify Família</div><div class="m"><span class="badge pend">Pendente</span><span class="sw" style="--c:var(--cat-8)">L</span>Lazer · Todo mês</div></div><div class="r"><span class="num money-md neg">−R$ 34,90</span><div class="acts"><button class="btn">Efetivar</button><details class="more"><summary>⋯</summary></details></div></div></div>
+    <div class="tx"><div class="st"></div><div class="d"><div class="t">Salário Audax</div><div class="m"><span class="badge pend">Pendente</span><span class="sw" style="--c:var(--cat-9)">R</span>Renda · Itaú</div></div><div class="r"><span class="num money-md pos">+R$ 4.200,00</span><div class="acts"><button class="btn">Efetivar</button><details class="more"><summary>⋯</summary></details></div></div></div>
+  </div>
+  <button class="fab"><svg><use href="#i-plus"/></svg>LANÇAR</button>
+  <nav class="tabbar"><a class="tab" aria-current="page"><svg><use href="#i-cal"/></svg>Mês</a><a class="tab"><svg><use href="#i-wallet"/></svg>Contas</a><a class="tab"><svg><use href="#i-tag"/></svg>Categ.</a><a class="tab"><svg><use href="#i-menu"/></svg>Mais</a></nav>
+</div>
+</template>
+
+<template id="contas">
+<div class="app">
+  <div class="top"><h3>CONTAS</h3><button class="btn">+ Nova</button></div>
+  <div class="total"><span class="label">Saldo total hoje</span><span class="num" style="font-size:20px;font-weight:700">R$ 8.412,70</span></div>
+  <div class="scroll">
+    <div class="item"><div class="glyph">IT</div><div class="grow"><div style="font-weight:600">Itaú corrente</div><div class="sub">CORRENTE · prev. R$ 6.180,10</div></div><span class="num money-md">R$ 7.220,30</span></div>
+    <div class="item"><div class="glyph">NU</div><div class="grow"><div style="font-weight:600">Nubank</div><div class="sub">CORRENTE · prev. −R$ 1.402,80</div></div><span class="num money-md">R$ 1.192,40</span></div>
+    <div class="item"><div class="glyph">$</div><div class="grow"><div style="font-weight:600">Carteira</div><div class="sub">DINHEIRO · prev. R$ 20,00</div></div><span class="num money-md">R$ 0,00</span></div>
+    <div class="item"><div class="glyph">CC</div><div class="grow"><div style="font-weight:600">Cartão Nubank<span class="badge pend tag">Em breve</span></div><div class="sub">CRÉDITO · fatura não suportada</div></div><span class="num money-md muted">—</span></div>
+    <div class="item"><div class="glyph">OL</div><div class="grow muted"><div style="font-weight:600">Poupança antiga<span class="badge pend tag">Arquivada</span></div><div class="sub">some dos saldos</div></div><span class="num money-md muted">R$ 310,00</span></div>
+  </div>
+  <nav class="tabbar"><a class="tab"><svg><use href="#i-cal"/></svg>Mês</a><a class="tab" aria-current="page"><svg><use href="#i-wallet"/></svg>Contas</a><a class="tab"><svg><use href="#i-tag"/></svg>Categ.</a><a class="tab"><svg><use href="#i-menu"/></svg>Mais</a></nav>
+</div>
+</template>
+
+<template id="cats">
+<div class="app">
+  <div class="top"><h3>CATEGORIAS</h3><button class="btn">+ Nova</button></div>
+  <div class="scroll">
+    <div class="sec"><span class="label">Gastos por categoria · out/2026</span></div>
+    <div class="bar-row"><span class="nm"><span class="sw" style="--c:var(--cat-5)">C</span>Casa</span><div class="bar"><i style="width:100%"></i></div><span class="num">2.540</span></div>
+    <div class="bar-row"><span class="nm"><span class="sw" style="--c:var(--cat-3)">M</span>Mercado</span><div class="bar"><i style="width:41%"></i></div><span class="num">1.038</span></div>
+    <div class="bar-row"><span class="nm"><span class="sw" style="--c:var(--cat-6)">T</span>Transporte</span><div class="bar"><i style="width:22%"></i></div><span class="num">560</span></div>
+    <div class="bar-row"><span class="nm"><span class="sw" style="--c:var(--cat-8)">L</span>Lazer</span><div class="bar"><i style="width:9%"></i></div><span class="num">229</span></div>
+    <div class="sec" style="padding-top:var(--space-5)"><span class="label">Paleta · 10 cores + letra</span></div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:4px var(--gutter) var(--space-3)">
+      <div class="big-sw" style="--c:var(--cat-1)">A</div><div class="big-sw" style="--c:var(--cat-2)">B</div><div class="big-sw" style="--c:var(--cat-3)">C</div><div class="big-sw" style="--c:var(--cat-4)">D</div><div class="big-sw" style="--c:var(--cat-5)">E</div>
+      <div class="big-sw" style="--c:var(--cat-6)">F</div><div class="big-sw" style="--c:var(--cat-7)">G</div><div class="big-sw" style="--c:var(--cat-8)">H</div><div class="big-sw" style="--c:var(--cat-9)">I</div><div class="big-sw" style="--c:var(--cat-10)">J</div>
+    </div>
+    <div class="item"><div class="big-sw" style="--c:var(--cat-7)">S</div><div class="grow"><div style="font-weight:600">Saúde</div><div class="sub">4 lançamentos</div></div><span class="num muted">⋯</span></div>
+    <div class="item"><div class="big-sw" style="--c:var(--cat-1)">E</div><div class="grow"><div style="font-weight:600">Educação</div><div class="sub">1 lançamento</div></div><span class="num muted">⋯</span></div>
+  </div>
+  <nav class="tabbar"><a class="tab"><svg><use href="#i-cal"/></svg>Mês</a><a class="tab"><svg><use href="#i-wallet"/></svg>Contas</a><a class="tab" aria-current="page"><svg><use href="#i-tag"/></svg>Categ.</a><a class="tab"><svg><use href="#i-menu"/></svg>Mais</a></nav>
+</div>
+</template>
+
+<template id="mais">
+<div class="app">
+  <div class="top"><h3>MAIS</h3></div>
+  <div class="scroll">
+    <div class="card"><span class="label">Sincronização</span><p><span class="pos">■</span> Tudo sincronizado · última 14:02<br>3 alterações aguardando envio.</p><button class="btn">Sincronizar agora</button></div>
+    <div class="card err"><span class="label neg">1 não aceita</span><p>Estas alterações não foram aceitas e não entram nos saldos. Descarte para voltar ao que o servidor tem, ou edite e salve de novo.</p><button class="btn ghost">Descartar</button></div>
+    <div class="card"><span class="label">Instalar o app</span><p>Instale na tela inicial para abrir como um app, mesmo sem internet.</p><button class="btn primary">Instalar</button></div>
+    <div class="card"><span class="label">Seus dados</span><p>Baixe uma cópia de tudo que está no servidor ou apague sua conta de vez. Precisa de internet.</p><div style="display:flex;gap:8px"><button class="btn ghost">Exportar</button><button class="btn danger">Excluir minha conta</button></div></div>
+    <div class="item"><div class="grow muted" style="font:var(--fs-sm) var(--font-mono)">josias@exemplo.com</div><button class="btn ghost">Sair</button></div>
+  </div>
+  <nav class="tabbar"><a class="tab"><svg><use href="#i-cal"/></svg>Mês</a><a class="tab"><svg><use href="#i-wallet"/></svg>Contas</a><a class="tab"><svg><use href="#i-tag"/></svg>Categ.</a><a class="tab" aria-current="page"><svg><use href="#i-menu"/></svg>Mais</a></nav>
+</div>
+</template>
+
+<template id="sheet">
+<div class="app">
+  <div class="top"><h3>MYFINANCE</h3><span class="num muted">OUT/2026</span></div>
+  <div class="scroll"><div class="day"><span class="label">Seg 26/10</span></div><div class="tx"><div class="st"></div><div class="d"><div class="t">Aluguel</div></div><span class="num neg">−R$ 2.350,00</span></div></div>
+  <div class="layer"><div class="sheet">
+    <div class="grab"></div>
+    <div class="seg"><span class="on">Despesa</span><span>Receita</span><span>Transf.</span></div>
+    <div class="field"><span class="label">Valor (R$)</span><div class="inp focus"><span class="num" style="font-size:var(--fs-lg);font-weight:700">87,50</span><span class="num muted">BRL</span></div></div>
+    <div class="field"><span class="label">Descrição</span><div class="inp"><span>Farmácia Panvel</span></div></div>
+    <div class="f2"><div class="field"><span class="label">Categoria</span><div class="inp"><span><span class="sw" style="--c:var(--cat-7)">S</span> Saúde</span><span class="muted">▾</span></div></div><div class="field"><span class="label">Conta</span><div class="inp"><span>Nubank</span><span class="muted">▾</span></div></div></div>
+    <div class="f2"><div class="field"><span class="label">Data</span><div class="inp"><span class="num">26/10/2026</span></div></div><div class="field"><span class="label">Repetir</span><div class="inp"><span>Não repete</span><span class="muted">▾</span></div></div></div>
+    <div class="f2" style="margin-top:var(--space-2)"><button class="btn ghost block">Cancelar</button><button class="btn primary block">Salvar</button></div>
+  </div></div>
+</div>
+</template>
+
+<template id="dialogo">
+<div class="app">
+  <div class="top"><h3>CONTAS</h3></div>
+  <div class="scroll"><div class="item"><div class="glyph">NU</div><div class="grow"><div style="font-weight:600">Nubank</div></div><span class="num">R$ 1.192,40</span></div></div>
+  <div class="layer center"><div class="dialog" role="alertdialog">
+    <h4>Excluir conta?</h4>
+    <p>“Nubank” e seus 12 lançamentos saem dos saldos. Se só quer esconder, arquive. Não pode ser desfeito.</p>
+    <div class="two"><button class="btn ghost">Cancelar</button><button class="btn danger">Excluir</button></div>
+  </div></div>
+</div>
+</template>
+
+<template id="vazio">
+<div class="app">
+  <div class="top"><h3>MYFINANCE</h3><span class="num" style="font-weight:700">NOV/2026</span></div>
+  <div class="sync ok"><i></i><span>SINCRONIZADO · 14:02</span></div>
+  <div class="hero"><div class="hero-grid"><div><span class="label">Saldo hoje</span><div class="num money-xl">R$ 8.412,70</div></div><div><span class="label fc">Previsto 30/11</span><div class="num money-xl fc">R$ 8.412,70</div></div></div></div>
+  <div class="empty"><svg viewBox="0 0 24 24"><use href="#i-inbox"/></svg><h4>Nenhum lançamento em nov/2026</h4><p>Lance receitas e despesas ou traga as recorrências do mês anterior.</p><button class="btn primary">+ Lançar</button></div>
+  <nav class="tabbar" style="margin-top:auto"><a class="tab" aria-current="page"><svg><use href="#i-cal"/></svg>Mês</a><a class="tab"><svg><use href="#i-wallet"/></svg>Contas</a><a class="tab"><svg><use href="#i-tag"/></svg>Categ.</a><a class="tab"><svg><use href="#i-menu"/></svg>Mais</a></nav>
+</div>
+</template>
+
+<div id="out"></div>
+<script>
+const combos=[[360,'light'],[360,'dark'],[390,'light'],[390,'dark']];
+const sections=[['Mês · 360/390 × claro/escuro','mes',combos],['Contas · Categorias · Mais (390)','contas|cats|mais',combos.slice(2)],['Formulário (Sheet) · Diálogo · Estado vazio (390)','sheet|dialogo|vazio',combos.slice(2)]];
+const out=document.getElementById('out');
+for(const [title,ids,cs] of sections){
+  out.insertAdjacentHTML('beforeend','<h2>'+title+'</h2>');
+  const row=document.createElement('div');row.className='row';
+  for(const id of ids.split('|'))for(const [w,t] of cs){
+    const f=document.createElement('figure');
+    f.innerHTML='<div class="phone theme-'+t+'" style="--w:'+(w+12)+'px"></div><figcaption>'+id+' · '+w+' · '+t+'</figcaption>';
+    f.firstChild.append(document.getElementById(id).content.cloneNode(true));
+    row.append(f);
+  }
+  out.append(row);
+}
+</script>
+</body>
+</html>
