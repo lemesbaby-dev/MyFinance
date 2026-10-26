@@ -1,0 +1,220 @@
+/* =========================================================================
+   MyFinance — tokens da direção B (calorosa). RASCUNHO, não importado pelo app.
+   3 camadas: primitivos -> semânticos -> componente.
+   Componentes só usam as camadas 2 e 3. Contraste verificado por contraste.mjs.
+   Convenção do arquivo (o script depende dela): blocos :root sem indentação.
+   Tema: segue o sistema (prefers-color-scheme); override manual opcional via
+   <html data-theme="light|dark">. O bloco dark aparece 2x (media + atributo):
+   contraste.mjs falha se divergirem.
+   ========================================================================= */
+
+/* ---------- CAMADA 1 · PRIMITIVOS ---------- */
+:root {
+  /* neutros quentes */
+  --cream-0:#FFFFFF; --cream-25:#FFFBF6; --cream-50:#FFF6EC; --cream-100:#F8EBDC; --cream-200:#EBDAC7; --cream-300:#D5BFA8;
+  --brown-400:#9A8573; --brown-500:#7A6757; --brown-600:#5E4D40; --brown-800:#3A2D24; --brown-900:#2A1F18;
+  --night-900:#17110D; --night-850:#1E1713; --night-800:#271E18; --night-700:#34291F; --night-600:#43362B; --night-300:#A99886; --night-100:#EFE3D6;
+  /* marca damasco */
+  --apricot-50:#FFEEDF; --apricot-200:#FFC99B; --apricot-400:#F5893F; --apricot-600:#BF4E14; --apricot-700:#9E3F0D;
+  /* semântica financeira (sem vermelho puro) */
+  --green-50:#E3F5EA; --green-600:#1B7A4B; --green-300:#6FD6A0;
+  --plum-50:#F9E6F0; --plum-600:#9A3A66; --plum-300:#F0A3C6;
+  --indigo-50:#E8EAFB; --indigo-600:#4452B5; --indigo-300:#AEB8FF;
+  --amber-50:#FFEBD0; --amber-700:#A44A06; --amber-300:#FFB877;
+
+  /* categorias: Okabe-Ito estendida, 10 cores + glifo próprio (cor nunca é o único canal) */
+  --cat-1:#0072B2; --cat-2:#BD8300; --cat-3:#009E73; --cat-4:#C972A2; --cat-5:#1D96DB;
+  --cat-6:#D55E00; --cat-7:#9C920C; --cat-8:#7A5195; --cat-9:#8C6D31; --cat-10:#5B6770;
+  --cat-ink-dark:#2A1F18; --cat-ink-light:#FFFFFF; /* glifo sobre a cor */
+
+  /* espaçamento (grade 4px) */
+  --space-0:0; --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
+  --space-6:24px; --space-8:32px; --space-10:40px; --space-12:48px; --space-16:64px;
+
+  /* raio */
+  --radius-1:12px; --radius-2:18px; --radius-3:24px; --radius-4:32px; --radius-pill:999px;
+
+  /* tipografia */
+  --font-display:'Fredoka Variable','Fredoka',ui-rounded,'SF Pro Rounded',system-ui,sans-serif;
+  --font-text:'Nunito Variable','Nunito',ui-rounded,'SF Pro Rounded',system-ui,sans-serif;
+  --fs-1:12px; --fs-2:14px; --fs-3:16px; --fs-4:20px; --fs-5:26px; --fs-6:34px; /* escala ~x1.25 */
+  --fw-medium:500; --fw-bold:700; --fw-heavy:800; --fw-display:600;
+  --lh-tight:1.15; --lh-snug:1.3; --lh-body:1.45;
+  --ls-tight:-0.01em;
+
+  /* borda */
+  --bw-1:1px; --bw-2:2px;
+
+  /* movimento */
+  --dur-fast:150ms; --dur-base:200ms; --dur-slow:300ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-in-out:cubic-bezier(.4,0,.2,1);
+
+  /* z-index nomeados */
+  --z-base:0; --z-sticky:10; --z-tabbar:20; --z-sheet:30; --z-dialog:40; --z-toast:50;
+
+  /* alvo de toque mínimo */
+  --tap:44px;
+}
+
+/* ---------- CAMADA 2 · SEMÂNTICOS · claro (padrão) ---------- */
+:root {
+  color-scheme: light;
+  --surface-page:var(--cream-50);
+  --surface-raised:var(--cream-0);
+  --surface-sunken:var(--cream-100);
+  --surface-overlay:rgba(42,31,24,.45);
+  --border-subtle:var(--cream-200);
+  --border-strong:var(--cream-300);
+  --text-strong:var(--brown-900);
+  --text-body:var(--brown-800);
+  --text-muted:var(--brown-500);
+  --brand:var(--apricot-600);
+  --brand-soft:var(--apricot-50);
+  --brand-strong:var(--apricot-700);
+  --on-brand:#FFFFFF;
+  --focus-ring:var(--indigo-600);
+
+  /* financeiro. Status nunca só por cor: sempre sinal/ícone/rótulo. */
+  --color-income:var(--green-600);    --color-income-soft:var(--green-50);
+  --color-expense:var(--plum-600);    --color-expense-soft:var(--plum-50);
+  --color-transfer:var(--brown-600);  --color-transfer-soft:var(--cream-100);
+  --color-forecast:var(--indigo-600); --color-forecast-soft:var(--indigo-50);
+  --color-overdue:var(--amber-700);   --color-overdue-soft:var(--amber-50);
+  --color-pending:var(--brown-500);   --color-pending-soft:var(--cream-100);
+  --color-settled:var(--green-600);   --color-settled-soft:var(--green-50);
+
+  --shadow-soft:0 6px 18px rgba(94,60,30,.10);
+  --shadow-lift:0 14px 36px rgba(94,60,30,.18);
+}
+
+/* ---------- CAMADA 2 · SEMÂNTICOS · escuro ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-page:var(--night-900);
+    --surface-raised:var(--night-800);
+    --surface-sunken:var(--night-850);
+    --surface-overlay:rgba(0,0,0,.6);
+    --border-subtle:var(--night-600);
+    --border-strong:var(--night-300);
+    --text-strong:#FFF5EA;
+    --text-body:var(--night-100);
+    --text-muted:var(--night-300);
+    --brand:var(--apricot-400);
+    --brand-soft:#3A2415;
+    --brand-strong:var(--apricot-400);
+    --cat-1:#0072B2; --cat-2:#E69F00; --cat-3:#009E73; --cat-4:#CC79A7; --cat-5:#56B4E9;
+    --cat-6:#D55E00; --cat-7:#F0E442; --cat-8:#8558A2; --cat-9:#8C6D31; --cat-10:#606C76;
+    --on-brand:var(--brown-900);
+    --focus-ring:var(--indigo-300);
+    --color-income:var(--green-300);    --color-income-soft:#17301F;
+    --color-expense:var(--plum-300);    --color-expense-soft:#3A1F2D;
+    --color-transfer:var(--night-100);  --color-transfer-soft:var(--night-700);
+    --color-forecast:var(--indigo-300); --color-forecast-soft:#1F2442;
+    --color-overdue:var(--amber-300);   --color-overdue-soft:#3B2512;
+    --color-pending:var(--night-300);   --color-pending-soft:var(--night-700);
+    --color-settled:var(--green-300);   --color-settled-soft:#17301F;
+    --shadow-soft:0 6px 18px rgba(0,0,0,.35);
+    --shadow-lift:0 14px 36px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page:var(--night-900);
+  --surface-raised:var(--night-800);
+  --surface-sunken:var(--night-850);
+  --surface-overlay:rgba(0,0,0,.6);
+  --border-subtle:var(--night-600);
+  --border-strong:var(--night-300);
+  --text-strong:#FFF5EA;
+  --text-body:var(--night-100);
+  --text-muted:var(--night-300);
+  --brand:var(--apricot-400);
+  --brand-soft:#3A2415;
+  --brand-strong:var(--apricot-400);
+  --cat-1:#0072B2; --cat-2:#E69F00; --cat-3:#009E73; --cat-4:#CC79A7; --cat-5:#56B4E9;
+  --cat-6:#D55E00; --cat-7:#F0E442; --cat-8:#8558A2; --cat-9:#8C6D31; --cat-10:#606C76;
+  --on-brand:var(--brown-900);
+  --focus-ring:var(--indigo-300);
+  --color-income:var(--green-300);    --color-income-soft:#17301F;
+  --color-expense:var(--plum-300);    --color-expense-soft:#3A1F2D;
+  --color-transfer:var(--night-100);  --color-transfer-soft:var(--night-700);
+  --color-forecast:var(--indigo-300); --color-forecast-soft:#1F2442;
+  --color-overdue:var(--amber-300);   --color-overdue-soft:#3B2512;
+  --color-pending:var(--night-300);   --color-pending-soft:var(--night-700);
+  --color-settled:var(--green-300);   --color-settled-soft:#17301F;
+  --shadow-soft:0 6px 18px rgba(0,0,0,.35);
+  --shadow-lift:0 14px 36px rgba(0,0,0,.5);
+}
+
+/* ---------- MODO DALTONISMO · <html data-cvd="on"> · combina com claro/escuro ----------
+   Sobrescreve só tokens semânticos/categoria. Receita=azul, despesa=laranja (eixo azul-laranja,
+   seguro p/ protan/deutan) em vez de verde-vermelho; categorias separadas por luminância+matiz
+   (ΔE2000 >= 15 nas simulações, medido por contraste.mjs). Glifo/sinal/rótulo continuam obrigatórios. */
+:root[data-cvd="on"] {
+  --cat-1:#4B5016; --cat-2:#2D757D; --cat-3:#22A08D; --cat-4:#144752; --cat-5:#4A1C21;
+  --cat-6:#A18F29; --cat-7:#141254; --cat-8:#BF364B; --cat-9:#D02FCD; --cat-10:#5C22A0;
+  --color-income:#0A6BA3;   --color-income-soft:#E2EDF4;
+  --color-expense:#6D1503;  --color-expense-soft:#EDE3E1;
+  --color-forecast:#480F61; --color-forecast-soft:#E9E2EC;
+  --color-overdue:#886003;  --color-overdue-soft:#F1ECE1;
+  --color-pending:#6C675C;  --color-pending-soft:#EDEDEB;
+  --color-transfer:#393939; --color-transfer-soft:#E7E7E7;
+  --color-settled:#0A6BA3;  --color-settled-soft:#E2EDF4;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-cvd="on"]:not([data-theme="light"]) {
+    --color-income:#A2CEFD;   --color-income-soft:#363333;
+    --color-expense:#FA6B42;  --color-expense-soft:#40271D;
+    --color-forecast:#9E83F1; --color-forecast-soft:#352A32;
+    --color-overdue:#F9DB93;  --color-overdue-soft:#403527;
+    --color-pending:#D1D1D1;  --color-pending-soft:#3B332E;
+    --color-transfer:#B19B8B; --color-transfer-soft:#382D26;
+    --color-settled:#A2CEFD;  --color-settled-soft:#363333;
+    --cat-1:#9F4C89; --cat-2:#ACE4EC; --cat-3:#A1B035; --cat-4:#7567DF; --cat-5:#BF7BA3;
+    --cat-6:#4B9B70; --cat-7:#A6A8EC; --cat-8:#D02C2E; --cat-9:#E3E78E; --cat-10:#E7B9B1;
+  }
+}
+:root[data-cvd="on"][data-theme="dark"] {
+  --color-income:#A2CEFD;   --color-income-soft:#363333;
+  --color-expense:#FA6B42;  --color-expense-soft:#40271D;
+  --color-forecast:#9E83F1; --color-forecast-soft:#352A32;
+  --color-overdue:#F9DB93;  --color-overdue-soft:#403527;
+  --color-pending:#D1D1D1;  --color-pending-soft:#3B332E;
+  --color-transfer:#B19B8B; --color-transfer-soft:#382D26;
+  --color-settled:#A2CEFD;  --color-settled-soft:#363333;
+  --cat-1:#9F4C89; --cat-2:#ACE4EC; --cat-3:#A1B035; --cat-4:#7567DF; --cat-5:#BF7BA3;
+  --cat-6:#4B9B70; --cat-7:#A6A8EC; --cat-8:#D02C2E; --cat-9:#E3E78E; --cat-10:#E7B9B1;
+}
+
+/* ---------- CAMADA 2 · tipografia semântica (valor monetário) ---------- */
+:root {
+  --num-features:tabular-nums lining-nums;
+  /* grande: hero e sheet (Fredoka) */
+  --money-lg-font:var(--font-display); --money-lg-size:var(--fs-6); --money-lg-weight:var(--fw-display); --money-lg-lh:var(--lh-tight);
+  /* médio: cartões/resumos (Nunito 800) */
+  --money-md-font:var(--font-text); --money-md-size:var(--fs-4); --money-md-weight:var(--fw-heavy); --money-md-lh:var(--lh-snug);
+  /* pequeno: linhas de lista */
+  --money-sm-font:var(--font-text); --money-sm-size:var(--fs-3); --money-sm-weight:var(--fw-heavy); --money-sm-lh:var(--lh-snug);
+  /* positivo/negativo: a cor vem de --color-income / --color-expense; o sinal (+/−) é obrigatório no texto */
+  --money-positive:var(--color-income);
+  --money-negative:var(--color-expense);
+}
+
+/* ---------- CAMADA 3 · COMPONENTE ---------- */
+:root {
+  --btn-radius:var(--radius-pill); --btn-h:var(--tap); --btn-px:var(--space-5);
+  --btn-primary-bg:var(--brand); --btn-primary-fg:var(--on-brand);
+  --btn-quiet-bg:var(--brand-soft); --btn-quiet-fg:var(--text-strong);
+  --card-bg:var(--surface-raised); --card-radius:var(--radius-3); --card-pad:var(--space-5); --card-shadow:var(--shadow-soft);
+  --row-gap:var(--space-3); --row-pad:var(--space-3); --row-icon:44px; --row-min-h:var(--tap);
+  --tabbar-bg:var(--surface-raised); --tabbar-active-bg:var(--brand-soft); --tabbar-active-fg:var(--brand-strong);
+  --sheet-radius:var(--radius-4); --sheet-z:var(--z-sheet);
+  --field-bg:var(--surface-sunken); --field-radius:var(--radius-2); --field-h:var(--tap);
+  --chip-radius:var(--radius-pill);
+}
+
+/* ---------- Movimento reduzido: durações viram ~0 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast:0.01ms; --dur-base:0.01ms; --dur-slow:0.01ms; }
+}
