@@ -60,8 +60,12 @@ Resposta `{ results: [{op_id, status, error?}] }`, com `status`:
 | `ok` | aplicada | tira da fila |
 | `dup` | `op_id` já aplicado (reenvio após queda de rede) | tira da fila |
 | `gone` | item já excluído (exclusão vence edição) | tira da fila; o pull traz o tombstone |
-| `conflict` | ocorrência de recorrência duplicada (outro aparelho já gerou o mesmo dia) | descarta a cópia local |
-| `rejected` | inválida (`error`) — validação de formato, referências ou cota | registra para a interface mostrar |
+| `conflict` | INSERT de ocorrência de recorrência duplicada (outro aparelho já gerou o mesmo dia) | descarta a cópia local |
+| `rejected` | inválida (`error`) — formato, referências, cota, ou UPDATE que colidiria com outra ocorrência da recorrência | registra para a interface mostrar |
+
+Só `ok` entra em `sync_ops` (reenviar uma recusada devolve o mesmo status). `delete` de id desconhecido é no-op `ok`.
+Referências já presentes no documento gravado não são revalidadas na edição. `GET /api/sync` devolve também `rev`:
+se o cursor do app for maior, o servidor foi restaurado de backup e o app reenfileira tudo e refaz o pull.
 
 **Conflitos**: *última escrita vence* por documento, na ordem de chegada; **exclusão vence edição**.
 `pay/unpay` é um upsert do lançamento inteiro (`status` + `paid_at`).

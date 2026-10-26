@@ -26,4 +26,5 @@ Cada marco termina com algo que roda e foi validado. Ordem pensada para provar o
 - **Dinheiro/recorrência**: testes unitários dirigidos (dia 31, bissexto, parcelas).
 - **Deploy/backup**: restauração real, não só "o cron rodou".
 
+> Nota M2: bancos criados antes do M2 (M1) devem ser recriados; sem migração (nunca houve deploy).
 > Nota M1: exige banco novo; o schema do M0 não é migrado (M0 nunca foi para produção).

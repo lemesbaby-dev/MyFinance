@@ -145,9 +145,12 @@ func TestSyncExclusaoVenceEdicao(t *testing.T) {
 	if ch, _, _ := e.pull("", 3); len(ch) != 0 {
 		t.Errorf("edição ressuscitou o lançamento: %+v", ch)
 	}
-	// excluir de novo é inofensivo; excluir o que o servidor nunca viu grava tombstone
+	// excluir de novo é inofensivo; excluir o que o servidor nunca viu é no-op (sem tombstone)
 	wantStatus(t, e.push("", op("transaction", "tx1", "delete", nil), op("transaction", "txX", "delete", nil)), "ok", "ok")
-	wantStatus(t, e.push("", upsert("transaction", "txX", expense("acc1", nil))), "gone")
+	if ch, _, _ := e.pull("", 3); len(ch) != 0 {
+		t.Errorf("delete de id desconhecido gravou algo: %+v", ch)
+	}
+	wantStatus(t, e.push("", upsert("transaction", "txX", expense("acc1", nil))), "ok")
 }
 
 func TestSyncRejeitaSemDerrubarOLote(t *testing.T) {
@@ -264,5 +267,78 @@ func TestSyncPaginacaoELimites(t *testing.T) {
 		if code, _, _ := e.do("GET", path, "-", nil); code != 401 {
 			t.Errorf("sync sem sessão deveria dar 401, deu %d", code)
 		}
+	}
+}
+
+func TestSyncReenvioDeRecusadaDevolveOMesmoStatus(t *testing.T) {
+	e := newEnv(t)
+	bad := upsert("transaction", "t1", expense("naoexiste", nil))
+	wantStatus(t, e.push("", bad), "rejected: conta inválida")
+	wantStatus(t, e.push("", bad), "rejected: conta inválida") // não vira dup
+	e.push("", upsert("account", "acc1", account("A")), upsert("transaction", "t2", expense("acc1", nil)),
+		op("transaction", "t2", "delete", nil))
+	gone := upsert("transaction", "t2", expense("acc1", nil))
+	wantStatus(t, e.push("", gone), "gone")
+	wantStatus(t, e.push("", gone), "gone")
+	conf := upsert("transaction", "t3", expense("acc1", m{"recurrence_id": "r", "date": "2026-11-01"}))
+	e.push("", upsert("recurrence", "r", m{"kind": "expense", "description": "x", "amount_cents": 1, "account_id": "acc1",
+		"frequency": "monthly", "interval_n": 1, "start_date": "2026-10-01", "active": true}),
+		upsert("transaction", "t4", expense("acc1", m{"recurrence_id": "r", "date": "2026-11-01"})))
+	wantStatus(t, e.push("", conf), "conflict")
+	wantStatus(t, e.push("", conf), "conflict")
+}
+
+func TestSyncEdicaoComPaiExcluido(t *testing.T) {
+	e := newEnv(t)
+	e.push("", upsert("account", "acc1", account("A")), upsert("account", "acc2", account("B")),
+		upsert("transaction", "tx1", expense("acc1", nil)))
+	e.push("", op("account", "acc1", "delete", nil))
+	// o app é quem cascateia: editar o lançamento que já apontava para a conta excluída passa
+	wantStatus(t, e.push("", upsert("transaction", "tx1", expense("acc1", m{"amount_cents": 7}))), "ok")
+	// referência NOVA continua exigindo conta viva
+	wantStatus(t, e.push("", upsert("transaction", "tx2", expense("acc1", nil))), "rejected: conta inválida")
+	wantStatus(t, e.push("", upsert("transaction", "tx1", expense("acc2", nil))), "ok")
+	wantStatus(t, e.push("", upsert("transaction", "tx1", expense("acc1", nil))), "rejected: conta inválida") // acc1 já não é do doc
+}
+
+func TestSyncConflitoEmUpdateEhRejected(t *testing.T) {
+	e := newEnv(t)
+	e.push("", upsert("account", "acc1", account("A")),
+		upsert("recurrence", "rec1", m{"kind": "expense", "description": "x", "amount_cents": 1, "account_id": "acc1",
+			"frequency": "monthly", "interval_n": 1, "start_date": "2026-10-01", "active": true}))
+	occ := func(id, date string) m {
+		return upsert("transaction", id, expense("acc1", m{"recurrence_id": "rec1", "date": date}))
+	}
+	wantStatus(t, e.push("", occ("a", "2026-11-01"), occ("b", "2026-12-01")), "ok", "ok")
+	wantStatus(t, e.push("", occ("b", "2026-11-01")), "rejected: já existe uma ocorrência desta recorrência nessa data")
+}
+
+func TestSyncCategoriaSemCiclo(t *testing.T) {
+	e := newEnv(t)
+	cat := func(id string, parent any) m {
+		return upsert("category", id, m{"name": id, "kind": "expense", "parent_id": parent, "color": ""})
+	}
+	wantStatus(t, e.push("", cat("a", nil), cat("b", "a"), cat("c", "b")), "ok", "ok", "ok")
+	wantStatus(t, e.push("", cat("a", "c")), "rejected: hierarquia de categorias inválida (ciclo ou mais de 10 níveis)")
+	wantStatus(t, e.push("", cat("a", "a")), "rejected: categoria-mãe inválida")
+	// cadeia funda demais
+	prev := "c"
+	var ops []m
+	for i := 0; i < 11; i++ {
+		id := fmt.Sprint("n", i)
+		ops = append(ops, cat(id, prev))
+		prev = id
+	}
+	st := e.push("", ops...)
+	if !strings.HasPrefix(st[10], "rejected") || st[0] != "ok" {
+		t.Errorf("cadeia > 10 níveis deveria ser recusada no fim: %v", st)
+	}
+}
+
+func TestSyncPullDevolveRev(t *testing.T) {
+	e := newEnv(t)
+	e.push("", upsert("account", "acc1", account("A")), upsert("account", "acc2", account("B")))
+	if _, o, _ := e.do("GET", "/api/sync?since=0", "", nil); o["rev"].(float64) != 2 {
+		t.Errorf("rev = %v, quero 2", o["rev"])
 	}
 }

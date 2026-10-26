@@ -40,7 +40,18 @@ async function tx(names, mode, fn) {
     t.oncomplete = () => ok(out);
     t.onerror = () => fail(t.error);
     t.onabort = () => fail(t.error);
-    Promise.resolve(fn(Object.fromEntries(names.map((n) => [n, t.objectStore(n)])))).then((v) => (out = v), fail);
+    // erro em fn (síncrono ou promise rejeitada): aborta, para nunca commitar escrita parcial
+    const bail = (e) => {
+      try {
+        t.abort();
+      } catch {}
+      fail(e);
+    };
+    try {
+      Promise.resolve(fn(Object.fromEntries(names.map((n) => [n, t.objectStore(n)])))).then((v) => (out = v), bail);
+    } catch (e) {
+      bail(e);
+    }
   });
 }
 
@@ -104,17 +115,33 @@ export function applyChanges(changes, cursor) {
   });
 }
 
+// Geração da cópia local: sobe a cada wipe, para um sync em andamento descartar o resultado.
+let gen = 0;
+export const generation = () => gen;
+
+// Reenfileira um upsert de cada entidade local (servidor restaurado de um backup mais antigo).
+export const requeueAll = () =>
+  tx(['entities', 'outbox'], 'readwrite', async (s) => {
+    for (const r of await wrap(s.entities.getAll())) {
+      s.outbox.add({ op_id: uuidv7(), kind: r.kind, id: r.id, action: 'upsert', data: r.data });
+    }
+  });
+
 // Apaga tudo (troca de usuário no mesmo aparelho, ou logout sem pendências).
-export const wipe = () =>
+export const wipe = () => (
+  gen++,
   tx(['entities', 'outbox', 'meta'], 'readwrite', (s) => {
     s.entities.clear();
     s.outbox.clear();
     s.meta.clear();
-  });
+  })
+);
 
 // Dados de outra pessoa nunca podem aparecer: se o usuário mudou, zera a cópia local.
+// Com pendências do usuário anterior não apaga nada: a interface decide (M4).
 export async function ensureUser(userId) {
   if ((await getMeta('user')) === userId) return false;
+  if ((await pending()) > 0) throw new Error('PENDING_OTHER_USER');
   await wipe();
   await setMeta('user', userId);
   return true;

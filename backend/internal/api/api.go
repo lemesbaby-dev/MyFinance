@@ -220,7 +220,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	respond(w, map[string]bool{"ok": true}, s.Store.RevokeSession(bearer(r)))
 }
 
-// GET /api/sync?since=<rev>&limit=<n> -> {changes, cursor, more}
+// GET /api/sync?since=<rev>&limit=<n> -> {changes, cursor, more, rev}
 func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -228,7 +228,11 @@ func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 	ch, cursor, more, err := s.Store.Pull(userFrom(r).ID, since, limit)
-	respond(w, map[string]any{"changes": ch, "cursor": cursor, "more": more}, err)
+	rev := int64(0)
+	if err == nil {
+		rev, err = s.Store.Rev(userFrom(r).ID)
+	}
+	respond(w, map[string]any{"changes": ch, "cursor": cursor, "more": more, "rev": rev}, err)
 }
 
 // POST /api/sync {ops:[...]} -> {results:[...]}

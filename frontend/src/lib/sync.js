@@ -18,16 +18,23 @@ export async function status(extra = {}) {
   };
 }
 
-async function push() {
+const changed = (g) => {
+  if (g !== db.generation()) throw new Error('usuário mudou durante a sincronização');
+};
+
+async function push(g) {
   for (;;) {
     const ops = await db.nextOps(BATCH);
     if (!ops.length) return;
     const { results } = await api.push(ops.map(({ seq, ...op }) => op));
+    changed(g);
     const byId = new Map(results.map((r) => [r.op_id, r]));
     const done = [];
+    let reset = false;
     for (const op of ops) {
       const r = byId.get(op.op_id);
       if (!r) continue; // sem resposta: continua na fila
+      if (r.status !== 'ok' && r.status !== 'dup') reset = true;
       if (r.status === 'conflict') await db.dropLocal(op.kind, op.id); // outro aparelho já gerou este item
       if (r.status === 'rejected') {
         const list = await db.getMeta('rejected', []);
@@ -37,14 +44,28 @@ async function push() {
     }
     if (!done.length) throw new Error('servidor não respondeu às operações');
     await db.ack(done);
+    // o pull pulou itens que estavam na fila: refaz a leitura completa (idempotente, dados pequenos)
+    if (reset) await db.setMeta('cursor', 0);
   }
 }
 
-async function pull() {
+// Devolve true se o servidor estava ATRÁS do app (backup restaurado): tudo local foi reenfileirado.
+async function pull(g) {
+  let since = await db.getMeta('cursor', 0);
+  let restored = false;
   for (;;) {
-    const { changes, cursor, more } = await api.pull(await db.getMeta('cursor', 0));
+    const { changes, cursor, more, rev } = await api.pull(since);
+    changed(g);
+    if (!restored && rev !== undefined && since > rev) {
+      await db.requeueAll();
+      await db.setMeta('cursor', 0);
+      since = 0;
+      restored = true;
+      continue;
+    }
     await db.applyChanges(changes, cursor);
-    if (!more) return;
+    since = cursor;
+    if (!more) return restored;
   }
 }
 
@@ -53,16 +74,24 @@ let running = null;
 // Resolve { ok, offline, error }. Chamadas simultâneas compartilham a mesma execução.
 export function sync() {
   running ??= (async () => {
-    emit(await status({ syncing: true }));
     let result = { ok: true };
     try {
-      await push();
-      await pull();
+      const g = db.generation();
+      emit(await status({ syncing: true }));
+      await push(g);
+      if (await pull(g)) {
+        await push(g);
+        await pull(g);
+      }
     } catch (e) {
       // status 0 = sem conexão; 401 já foi tratado por api.js (volta ao login)
       result = e instanceof ApiError && e.status === 0 ? { ok: false, offline: true } : { ok: false, error: e.message };
     }
-    emit(await status({ syncing: false, error: result.error ?? '' }));
+    try {
+      emit(await status({ syncing: false, error: result.error ?? '' }));
+    } catch (e) {
+      result = { ok: false, error: e.message };
+    }
     return result;
   })().finally(() => (running = null));
   return running;
@@ -72,7 +101,7 @@ let timer = null;
 // Agenda um envio logo após gravar (junta várias gravações seguidas).
 export function syncSoon(ms = 1500) {
   clearTimeout(timer);
-  timer = setTimeout(sync, ms);
+  timer = setTimeout(() => sync().catch(() => {}), ms);
 }
 
 // O que a interface usa para gravar: local primeiro, rede depois.
@@ -81,9 +110,9 @@ export const remove = async (kind, id) => (await db.remove(kind, id), emit(await
 
 // Sincroniza ao abrir, ao voltar a rede e ao voltar para o app.
 export function startAutoSync() {
-  const go = () => sync();
+  const go = () => sync().catch(() => {});
   addEventListener('online', go);
-  addEventListener('offline', async () => emit(await status()));
+  addEventListener('offline', () => status().then(emit).catch(() => {}));
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && go());
   go();
 }

@@ -109,7 +109,7 @@ type exists func(kind, id string) bool
 func refOK(ex exists, kind string, id *string) bool { return id == nil || ex(kind, *id) }
 
 // validateData confere o documento e devolve o JSON normalizado a ser gravado.
-func validateData(kind, id string, raw json.RawMessage, ex exists) (json.RawMessage, error) {
+func validateData(kind, id string, raw json.RawMessage, ex exists, parentOf func(string) *string) (json.RawMessage, error) {
 	var out any
 	var err error
 	switch kind {
@@ -126,7 +126,8 @@ func validateData(kind, id string, raw json.RawMessage, ex exists) (json.RawMess
 		if err = strictDecode(raw, &c); err == nil {
 			err = firstErr(text("nome", c.Name, maxText, true), text("cor", c.Color, 20, false),
 				cond(oneOf(c.Kind, "income", "expense"), "tipo deve ser income ou expense"),
-				cond(c.ParentID == nil || (*c.ParentID != id && ex("category", *c.ParentID)), "categoria-mãe inválida"))
+				cond(c.ParentID == nil || (*c.ParentID != id && ex("category", *c.ParentID)), "categoria-mãe inválida"),
+				cond(!cycle(id, c.ParentID, parentOf), "hierarquia de categorias inválida (ciclo ou mais de 10 níveis)"))
 		}
 		out = c
 	case "recurrence":
@@ -157,6 +158,17 @@ func validateData(kind, id string, raw json.RawMessage, ex exists) (json.RawMess
 	}
 	norm, _ := json.Marshal(out)
 	return norm, nil
+}
+
+// cycle sobe a cadeia de parent_id (máx. 10 níveis); true se volta ao próprio id ou passa do limite.
+func cycle(id string, parent *string, parentOf func(string) *string) bool {
+	for i := 0; parent != nil; i++ {
+		if *parent == id || i >= 10 {
+			return true
+		}
+		parent = parentOf(*parent)
+	}
+	return false
 }
 
 func cond(ok bool, msg string) error {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -75,5 +76,63 @@ func TestPushNaoVazaEntreLotes(t *testing.T) {
 	st.db.QueryRow(`SELECT COUNT(*) FROM entities`).Scan(&n)
 	if n != 0 {
 		t.Errorf("lote abortado deixou %d linhas", n)
+	}
+}
+
+func TestCotaDeBytesVaiTambemNoUpdate(t *testing.T) {
+	defer func(b int64) { MaxBytes = b }(MaxBytes)
+	MaxBytes = 100
+	st, uid := open(t)
+	st.Push(uid, []Op{acc("a1")}) // 73 bytes
+	big := Op{OpID: "big", Kind: "account", ID: "a1", Action: "upsert",
+		Data: json.RawMessage(`{"name":"` + strings.Repeat("é", 40) + `","type":"cash","initial_balance_cents":0,"archived":false}`)}
+	if res, _ := st.Push(uid, []Op{big}); res[0].Status != "rejected" { // 40 caracteres, 80 bytes
+		t.Errorf("update inflando bytes passou: %+v", res[0])
+	}
+}
+
+func TestDeleteDesconhecidoENaoGravaTombstone(t *testing.T) {
+	st, uid := open(t)
+	res, _ := st.Push(uid, []Op{{OpID: "d", Kind: "account", ID: "x", Action: "delete"}})
+	var n int
+	st.db.QueryRow(`SELECT COUNT(*) FROM entities`).Scan(&n)
+	if res[0].Status != "ok" || n != 0 {
+		t.Errorf("status %s, %d linhas", res[0].Status, n)
+	}
+}
+
+func TestTetoDeTombstones(t *testing.T) {
+	defer func(r int64) { MaxRows = r }(MaxRows)
+	MaxRows = 1 // teto total = 4 linhas, vivas ou não
+	st, uid := open(t)
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprint("a", i)
+		res, _ := st.Push(uid, []Op{acc(id)})
+		want := "ok"
+		if i == 4 {
+			want = "rejected"
+		}
+		if res[0].Status != want {
+			t.Errorf("conta %d: %s, quero %s", i, res[0].Status, want)
+		}
+		st.Push(uid, []Op{{OpID: "del" + id, Kind: "account", ID: id, Action: "delete"}})
+	}
+	var d string
+	st.db.QueryRow(`SELECT data FROM entities WHERE id='a0'`).Scan(&d)
+	if d != "{}" {
+		t.Errorf("tombstone guarda dado: %s", d)
+	}
+}
+
+func TestSyncOpsSoGuardaOk(t *testing.T) {
+	st, uid := open(t)
+	st.Push(uid, []Op{{OpID: "x y", Kind: "account", ID: "a", Action: "upsert"}, {OpID: "ruim", Kind: "account", ID: "a", Action: "upsert",
+		Data: json.RawMessage(`{}`)}, acc("a1")})
+	st.db.Exec(`UPDATE sync_ops SET applied_at=datetime('now','-100 days')`)
+	st.Push(uid, []Op{acc("a2")}) // poda a antiga
+	var n int
+	st.db.QueryRow(`SELECT COUNT(*) FROM sync_ops`).Scan(&n)
+	if n != 1 {
+		t.Errorf("sync_ops tem %d linhas, quero 1 (só a2; as recusadas não entram e a velha foi podada)", n)
 	}
 }

@@ -12,7 +12,7 @@ const { uuidv7 } = await import('./uuid.js');
 
 // Servidor falso com a mesma semântica do real: dup por op_id, rev crescente, tombstone.
 function fakeServer() {
-  const s = { rev: 0, rows: new Map(), seen: new Set(), online: true, loseResponse: false, forced: {}, applied: [] };
+  const s = { rev: 0, rows: new Map(), seen: new Set(), online: true, loseResponse: false, forced: {}, applied: [], page: Infinity };
   globalThis.fetch = async (url, init) => {
     if (!s.online) throw new TypeError('offline');
     const path = new URL(url, 'http://x');
@@ -20,8 +20,8 @@ function fakeServer() {
     if (init.method === 'POST') {
       const results = JSON.parse(init.body).ops.map((op) => {
         if (s.seen.has(op.op_id)) return { op_id: op.op_id, status: 'dup' };
+        if (s.forced[op.id]) return { op_id: op.op_id, status: s.forced[op.id], error: 'forçado' }; // só `ok` entra em seen
         s.seen.add(op.op_id);
-        if (s.forced[op.id]) return { op_id: op.op_id, status: s.forced[op.id], error: 'forçado' };
         s.applied.push(op);
         s.rows.set(op.kind + '/' + op.id, { kind: op.kind, id: op.id, rev: ++s.rev, deleted: op.action === 'delete', data: op.data ?? {} });
         return { op_id: op.op_id, status: 'ok' };
@@ -30,8 +30,9 @@ function fakeServer() {
       body = { results };
     } else {
       const since = Number(path.searchParams.get('since'));
-      const changes = [...s.rows.values()].filter((r) => r.rev > since).sort((a, b) => a.rev - b.rev);
-      body = { changes, cursor: changes.at(-1)?.rev ?? since, more: false };
+      const all = [...s.rows.values()].filter((r) => r.rev > since).sort((a, b) => a.rev - b.rev);
+      const changes = all.slice(0, s.page);
+      body = { changes, cursor: changes.at(-1)?.rev ?? since, more: all.length > changes.length, rev: s.rev };
     }
     return { ok: true, status: 200, json: async () => body };
   };
@@ -131,7 +132,75 @@ test('troca de usuário no mesmo aparelho zera a cópia local', async () => {
   await save('account', 'a1', acc);
   assert.equal(await db.ensureUser('ana'), false, 'mesmo usuário preserva');
   assert.equal((await db.list('account')).length, 1);
+  await sync(); // sem pendências
   assert.equal(await db.ensureUser('bia'), true);
   assert.equal((await db.list('account')).length, 0, 'dados da Ana não aparecem para a Bia');
   assert.equal(await db.pending(), 0);
+});
+
+test('troca de usuário com pendências não apaga nada', async () => {
+  await db.ensureUser('ana');
+  await save('account', 'a1', acc);
+  await assert.rejects(db.ensureUser('bia'), { message: 'PENDING_OTHER_USER' });
+  assert.equal((await db.list('account')).length, 1);
+  assert.equal(await db.pending(), 1);
+  assert.equal(await db.getMeta('user'), 'ana');
+});
+
+test('tx aborta quando a escrita falha no meio: nada parcial', async () => {
+  await assert.rejects(
+    db.applyChanges(
+      [
+        { kind: 'account', id: 'ok', deleted: false, data: acc },
+        { kind: 'account', id: 'ruim', deleted: false, data: { f: () => 1 } }, // não clonável
+      ],
+      9,
+    ),
+  );
+  assert.equal((await db.list('account')).length, 0, 'a primeira gravação foi desfeita');
+  assert.equal(await db.getMeta('cursor'), null);
+});
+
+test('op recusada não entra em seen (reenvio devolveria o mesmo status)', async () => {
+  await save('transaction', 'ruim', { description: 'x' });
+  srv.forced = { ruim: 'rejected' };
+  const [op] = await db.nextOps(10);
+  await sync();
+  assert.equal(srv.seen.has(op.op_id), false);
+});
+
+test('status diferente de ok/dup zera o cursor para reconciliar o que o pull pulou', async () => {
+  srv.rows.set('account/x', { kind: 'account', id: 'x', rev: ++srv.rev, deleted: false, data: acc });
+  await sync();
+  assert.equal(await db.getMeta('cursor'), 1);
+  await save('transaction', 'ruim', { description: 'x' });
+  srv.forced = { ruim: 'rejected' };
+  const since = [];
+  const f = globalThis.fetch;
+  globalThis.fetch = (url, init) => (init.method === 'GET' && since.push(new URL(url, 'http://x').searchParams.get('since')), f(url, init));
+  await sync();
+  assert.equal(since[0], '0', 'pull refeito do zero');
+});
+
+test('pull pagina enquanto more=true', async () => {
+  for (const id of ['a', 'b', 'c']) srv.rows.set('account/' + id, { kind: 'account', id, rev: ++srv.rev, deleted: false, data: acc });
+  srv.page = 2;
+  await sync();
+  assert.equal((await db.list('account')).length, 3);
+  assert.equal(await db.getMeta('cursor'), 3);
+});
+
+test('servidor restaurado de backup (cursor > rev): reenfileira tudo e refaz o pull', async () => {
+  await save('account', 'a1', acc);
+  await sync();
+  await db.setMeta('cursor', 50); // o app já tinha visto rev 50; o servidor voltou atrás
+  srv.rows.clear();
+  srv.rev = 0;
+  srv.seen.clear();
+  srv.applied.length = 0;
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(srv.rows.has('account/a1'), true, 'a cópia local voltou para o servidor');
+  assert.equal(await db.pending(), 0);
+  assert.equal((await db.list('account')).length, 1);
+  assert.equal(await db.getMeta('cursor'), 1);
 });

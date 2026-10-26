@@ -63,6 +63,7 @@ ADDR=127.0.0.1:8080 ./financas
 
 - Coloque atrás de um proxy com **HTTPS** (Caddy ou Nginx): a sessão trafega no header e o login Google exige HTTPS.
 - **Backup**: copie o arquivo `.db` (use `sqlite3 financas.db ".backup out.db"` com o app rodando).
+- Bancos criados antes do M2 (M1) devem ser recriados; sem migração (nunca houve deploy).
 - **M1 exige banco novo**; o schema do M0 não é migrado (M0 nunca foi para produção).
 - `ADDR` padrão é `127.0.0.1:8080` (atrás do proxy); só confiamos em `X-Forwarded-For` quando a conexão vem de loopback.
 - Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS).
