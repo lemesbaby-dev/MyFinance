@@ -9,8 +9,12 @@ const listeners = new Set();
 export const onStatus = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 const emit = (s) => listeners.forEach((fn) => fn(s));
 
+// Última tentativa falhou por falta de rede (navigator.onLine nem sempre percebe: wifi sem internet).
+let offline = false;
+
 export async function status(extra = {}) {
   return {
+    offline,
     pending: await db.pending(),
     rejected: (await db.getMeta('rejected', [])).length,
     online: typeof navigator === 'undefined' ? true : navigator.onLine,
@@ -87,6 +91,7 @@ export function sync() {
       // status 0 = sem conexão; 401 já foi tratado por api.js (volta ao login)
       result = e instanceof ApiError && e.status === 0 ? { ok: false, offline: true } : { ok: false, error: e.message };
     }
+    offline = !!result.offline;
     try {
       emit(await status({ syncing: false, error: result.error ?? '' }));
     } catch (e) {

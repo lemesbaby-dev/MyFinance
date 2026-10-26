@@ -1,58 +1,84 @@
 <script>
-  import { api } from './lib/api.js';
+  import { app, saveTx, createInstallments, createRecurrence, editRecurring } from './lib/app.svelte.js';
   import { parseMoney, isoToday } from './lib/format.js';
-  let { accounts, categories, onclose, onsaved } = $props();
+  import { MAX_INSTALLMENTS } from './lib/finance.js';
+  import Scope from './Scope.svelte';
 
-  let kind = $state('expense');
-  let amount = $state('');
-  let description = $state('');
-  let date = $state(isoToday());
-  // O formulário é montado já com as contas carregadas; o valor inicial basta.
-  // svelte-ignore state_referenced_locally
-  let accountId = $state(accounts[0]?.id);
-  // svelte-ignore state_referenced_locally
-  let toAccountId = $state(accounts[1]?.id);
-  let categoryId = $state('');
-  let done = $state(false); // já paguei / já recebi
-  let repeat = $state('none'); // none | monthly | weekly | yearly
+  // tx = lançamento existente (edição); sem tx = novo.
+  let { tx = null, onclose } = $props();
+
+  const editing = !!tx;
+  const recurring = !!tx?.recurrence_id;
+  /* svelte-ignore state_referenced_locally */
+  let kind = $state(tx?.kind ?? 'expense');
+  /* svelte-ignore state_referenced_locally */
+  let amount = $state(tx ? (tx.amount_cents / 100).toFixed(2).replace('.', ',') : '');
+  /* svelte-ignore state_referenced_locally */
+  let description = $state(tx?.description ?? '');
+  /* svelte-ignore state_referenced_locally */
+  let date = $state(tx?.date ?? isoToday());
+  /* svelte-ignore state_referenced_locally */
+  let accountId = $state(tx?.account_id ?? app.accounts.find((a) => !a.archived)?.id);
+  /* svelte-ignore state_referenced_locally */
+  let toAccountId = $state(tx?.transfer_account_id ?? app.accounts.filter((a) => !a.archived)[1]?.id);
+  /* svelte-ignore state_referenced_locally */
+  let categoryId = $state(tx?.category_id ?? '');
+  /* svelte-ignore state_referenced_locally */
+  let done = $state(tx?.status === 'paid');
+  let repeat = $state('none'); // none | daily | weekly | monthly | yearly
   let installments = $state(1);
   let error = $state('');
   let busy = $state(false);
+  let askScope = $state(false);
 
-  const cats = $derived(categories.filter((c) => c.kind === kind));
+  const accounts = $derived(app.accounts.filter((a) => !a.archived || a.id === tx?.account_id));
+  const cats = $derived(app.categories.filter((c) => c.kind === kind));
   const KINDS = [['expense', 'Despesa'], ['income', 'Receita'], ['transfer', 'Transferência']];
 
-  async function submit(e) {
-    e.preventDefault();
+  function fields() {
     const cents = parseMoney(amount);
-    if (!cents || cents <= 0) { error = 'Informe um valor maior que zero.'; return; }
-    if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) { error = 'Escolha uma conta de destino diferente.'; return; }
+    if (!cents || cents <= 0) throw new Error('Informe um valor maior que zero.');
+    if (!accountId) throw new Error('Crie uma conta primeiro (aba Contas).');
+    if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) throw new Error('Escolha uma conta de destino diferente.');
+    const d = description.trim() || (kind === 'transfer' ? 'Transferência' : '');
+    if (!d) throw new Error('Informe a descrição.');
+    return {
+      kind, description: d, amount_cents: cents, date, account_id: accountId,
+      transfer_account_id: kind === 'transfer' ? toAccountId : null,
+      category_id: kind !== 'transfer' && categoryId ? categoryId : null,
+    };
+  }
+
+  const paidFields = (f) => ({ ...f, status: done ? 'paid' : 'pending', paid_at: done ? (tx?.paid_at ?? date) : null });
+
+  async function run(fn) {
     busy = true; error = '';
-    try {
-      const base = {
-        kind, description: description.trim() || (kind === 'transfer' ? 'Transferência' : ''),
-        amount_cents: cents, date, account_id: Number(accountId),
-        category_id: kind !== 'transfer' && categoryId ? Number(categoryId) : null,
-      };
-      if (!base.description) { error = 'Informe a descrição.'; busy = false; return; }
+    try { await fn(); onclose(); } catch (e) { error = e.message; } finally { busy = false; }
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    let f;
+    try { f = fields(); } catch (err) { error = err.message; return; }
+    if (editing && recurring) { askScope = true; return; }
+    run(async () => {
+      if (editing) return saveTx(tx.id, paidFields(f));
       if (kind !== 'transfer' && repeat !== 'none') {
-        await api.createRecurrence({ kind, description: base.description, amount_cents: cents,
-          account_id: base.account_id, category_id: base.category_id,
-          frequency: repeat, interval_n: 1, start_date: date });
-      } else if (kind === 'transfer') {
-        await api.createTransaction({ ...base, transfer_account_id: Number(toAccountId), status: done ? 'paid' : 'pending' });
-      } else if (installments > 1) {
-        await api.createTransaction({ ...base, installments: Number(installments) });
-      } else {
-        await api.createTransaction({ ...base, status: done ? 'paid' : 'pending' });
+        return createRecurrence({ ...f, frequency: repeat, interval_n: 1, start_date: date });
       }
-      onsaved();
-    } catch (err) { error = err.message; } finally { busy = false; }
+      if (kind !== 'transfer' && installments > 1) return createInstallments(f, Number(installments));
+      return saveTx(null, paidFields(f));
+    });
+  }
+
+  function pickScope(scope) {
+    askScope = false;
+    run(() => editRecurring(tx, scope, paidFields(fields())));
   }
 </script>
 
 <div class="scrim" role="presentation" onclick={onclose}></div>
-<form class="sheet" onsubmit={submit} aria-label="Novo lançamento">
+<form class="sheet" onsubmit={submit} aria-label={editing ? 'Editar lançamento' : 'Novo lançamento'}>
   <div class="seg" role="group" aria-label="Tipo">
     {#each KINDS as [k, label]}
       <button type="button" class:on={kind === k} aria-pressed={kind === k} onclick={() => { kind = k; categoryId = ''; }}>{label}</button>
@@ -60,31 +86,34 @@
   </div>
 
   <label class="field"><span>Valor (R$)</span><input bind:value={amount} inputmode="decimal" placeholder="0,00" required /></label>
-  <label class="field"><span>Descrição</span><input bind:value={description} placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} /></label>
+  <label class="field"><span>Descrição</span><input bind:value={description} maxlength="200" placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} /></label>
   <label class="field"><span>{kind === 'income' ? 'Data de recebimento' : 'Vencimento'}</span><input type="date" bind:value={date} required /></label>
 
   <label class="field"><span>{kind === 'transfer' ? 'Sai da conta' : 'Conta'}</span>
-    <select bind:value={accountId}>{#each accounts as a}<option value={a.id}>{a.name}</option>{/each}</select></label>
+    <select bind:value={accountId}>{#each accounts as a (a.id)}<option value={a.id}>{a.name}</option>{/each}</select></label>
 
   {#if kind === 'transfer'}
     <label class="field"><span>Entra na conta</span>
-      <select bind:value={toAccountId}>{#each accounts as a}<option value={a.id}>{a.name}</option>{/each}</select></label>
+      <select bind:value={toAccountId}>{#each accounts as a (a.id)}<option value={a.id}>{a.name}</option>{/each}</select></label>
   {:else}
     <label class="field"><span>Categoria</span>
-      <select bind:value={categoryId}><option value="">Sem categoria</option>{#each cats as c}<option value={c.id}>{c.name}</option>{/each}</select></label>
-    <label class="field"><span>Repetir</span>
-      <select bind:value={repeat}>
-        <option value="none">Não repete</option><option value="monthly">Todo mês</option>
-        <option value="weekly">Toda semana</option><option value="yearly">Todo ano</option>
-      </select></label>
-    {#if kind === 'expense' && repeat === 'none'}
-      <label class="field"><span>Parcelas</span><input type="number" min="1" max="60" bind:value={installments} /></label>
+      <select bind:value={categoryId}><option value="">Sem categoria</option>{#each cats as c (c.id)}<option value={c.id}>{c.name}</option>{/each}</select></label>
+    {#if !editing}
+      <label class="field"><span>Repetir</span>
+        <select bind:value={repeat}>
+          <option value="none">Não repete</option><option value="monthly">Todo mês</option>
+          <option value="weekly">Toda semana</option><option value="yearly">Todo ano</option><option value="daily">Todo dia</option>
+        </select></label>
+      {#if kind === 'expense' && repeat === 'none'}
+        <label class="field"><span>Parcelas</span><input type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} /></label>
+      {/if}
     {/if}
   {/if}
 
-  {#if repeat === 'none' && installments <= 1}
-    <label class="check"><input type="checkbox" bind:checked={done} /> {kind === 'income' ? 'Já recebi' : 'Já paguei'}</label>
+  {#if editing || (repeat === 'none' && installments <= 1)}
+    <label class="check"><input type="checkbox" bind:checked={done} /> {kind === 'income' ? 'Já recebi' : kind === 'transfer' ? 'Já transferi' : 'Já paguei'}</label>
   {/if}
+  {#if recurring}<p class="muted small">Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.</p>{/if}
 
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="actions">
@@ -93,16 +122,6 @@
   </div>
 </form>
 
-<style>
-  .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); }
-  .sheet {
-    position: fixed; left: 0; right: 0; bottom: 0; max-height: 92dvh; overflow-y: auto;
-    max-width: 42rem; margin: 0 auto; padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
-    background: var(--paper); border-radius: 18px 18px 0 0; border-top: 1px solid var(--line);
-  }
-  .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
-  .seg button { border: 0; background: transparent; padding: 0.6rem 0.25rem; }
-  .seg button.on { background: var(--ink); color: var(--paper); font-weight: 600; }
-  .check { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-</style>
+{#if askScope}
+  <Scope verb="Salvar" onpick={pickScope} onclose={() => (askScope = false)} />
+{/if}
