@@ -25,13 +25,22 @@ type Server struct {
 	// SessionTTL: validade da sessão, renovada com o uso. Padrão 90 dias.
 	SessionTTL time.Duration
 	Origins    []string // origens permitidas via CORS (ex.: o app Capacitor)
+	// TrustedProxies: de quem confiamos o X-Forwarded-For (IP ou CIDR). Vazio = só loopback.
+	TrustedProxies []*net.IPNet
 
 	limiter limiter
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
+		if err := s.Store.Ping(); err != nil {
+			log.Printf("health: %v", err)
+			writeErr(w, 503, "banco indisponível")
+			return
+		}
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	})
 
 	mux.HandleFunc("GET /api/auth/config", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]string{"google_client_id": s.ClientID})
@@ -44,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/sync", s.pull)
 	mux.HandleFunc("POST /api/sync", s.push)
+	mux.HandleFunc("GET /api/export", s.export)
+	mux.HandleFunc("DELETE /api/account", s.deleteAccount)
 
 	return s.cors(s.auth(mux))
 }
@@ -120,52 +131,94 @@ func (s *Server) auth(next http.Handler) http.Handler {
 	})
 }
 
-// limiter: no máximo N tentativas por IP por minuto (em memória; some ao reiniciar).
-// Atrás do proxy (conexão de loopback) usa o último X-Forwarded-For; em conexão direta usa RemoteAddr.
-// ponytail: cota por usuário (além de por IP) fica para o M2, junto do /sync.
+// limiter: no máximo N tentativas por chave por minuto (em memória; some ao reiniciar).
+// ponytail: janela por lista de timestamps; contador por janela fixa se o volume pedir.
 type limiter struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
+	mu    sync.Mutex
+	hits  map[string][]time.Time
+	swept time.Time // última varredura de chaves esquecidas (no máximo 1 por minuto)
 }
 
-func (l *limiter) allow(ip string, n int) bool {
+func (l *limiter) allow(key string, n int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.hits == nil {
 		l.hits = map[string][]time.Time{}
 	}
-	cut := time.Now().Add(-time.Minute)
-	kept := l.hits[ip][:0]
-	for _, t := range l.hits[ip] {
-		if t.After(cut) {
-			kept = append(kept, t)
-		}
-	}
-	if len(l.hits) > 1000 { // varre IPs que nunca voltaram, para o mapa não crescer sem limite
+	now := time.Now()
+	cut := now.Add(-time.Minute)
+	if now.Sub(l.swept) >= time.Minute { // varre chaves que nunca voltaram, para o mapa não crescer sem limite
+		l.swept = now
 		for k, ts := range l.hits {
-			if k != ip && (len(ts) == 0 || ts[len(ts)-1].Before(cut)) {
+			if k != key && (len(ts) == 0 || ts[len(ts)-1].Before(cut)) {
 				delete(l.hits, k)
 			}
 		}
 	}
+	kept := l.hits[key][:0]
+	for _, t := range l.hits[key] {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
 	if len(kept) == 0 {
-		delete(l.hits, ip) // sem hit na janela: não deixa a chave velha no mapa
+		delete(l.hits, key) // sem hit na janela: não deixa a chave velha no mapa
 	}
 	if len(kept) >= n {
-		l.hits[ip] = kept
+		l.hits[key] = kept
 		return false
 	}
-	l.hits[ip] = append(kept, time.Now())
+	l.hits[key] = append(kept, now)
 	return true
 }
 
-func clientIP(r *http.Request) string {
+// ParseTrustedProxies lê "IP[,CIDR...]" (ex.: "10.0.0.0/8,192.168.1.5"). Vazio = loopback.
+func ParseTrustedProxies(list string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, f := range strings.Split(list, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		if !strings.Contains(f, "/") {
+			if ip := net.ParseIP(f); ip != nil && ip.To4() != nil {
+				f += "/32"
+			} else {
+				f += "/128"
+			}
+		}
+		_, n, err := net.ParseCIDR(f)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func (s *Server) trusted(ip net.IP) bool {
+	if len(s.TrustedProxies) == 0 {
+		return ip.IsLoopback()
+	}
+	for _, n := range s.TrustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP: RemoteAddr, ou o último X-Forwarded-For quando a conexão vem de um proxy confiável.
+// IPv6 vira o prefixo /64 (um cliente tem o /64 inteiro; chave por endereço seria burlável).
+func (s *Server) clientIP(r *http.Request) string {
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	if ip := net.ParseIP(host); ip != nil && s.trusted(ip) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
-			return strings.TrimSpace(parts[len(parts)-1])
+			host = strings.TrimSpace(parts[len(parts)-1])
 		}
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 	}
 	return host
 }
@@ -174,7 +227,7 @@ func clientIP(r *http.Request) string {
 
 // POST /api/auth/google {id_token, device} -> {token, user}
 func (s *Server) loginGoogle(w http.ResponseWriter, r *http.Request) {
-	if !s.limiter.allow(clientIP(r), 10) {
+	if !s.limiter.allow(s.clientIP(r), 10) {
 		writeErr(w, 429, "muitas tentativas; aguarde um minuto")
 		return
 	}
@@ -222,6 +275,10 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/sync?since=<rev>&limit=<n> -> {changes, cursor, more, rev}
 func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.allow("p:"+userFrom(r).ID, 300) {
+		writeErr(w, 429, "muitas requisições; aguarde um minuto")
+		return
+	}
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit < 1 || limit > 1000 {
@@ -254,6 +311,39 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.Store.Push(u.ID, in.Ops)
 	respond(w, map[string]any{"results": res}, err)
+}
+
+// GET /api/export?format=json -> todos os documentos do usuário, como download.
+func (s *Server) export(w http.ResponseWriter, r *http.Request) {
+	if f := r.URL.Query().Get("format"); f != "" && f != "json" {
+		writeErr(w, 400, "format deve ser json")
+		return
+	}
+	u := userFrom(r)
+	docs, err := s.Store.Export(u.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="financas-export.json"`)
+	writeJSON(w, 200, map[string]any{"exported_at": time.Now().UTC().Format(time.RFC3339),
+		"email": u.Email, "entities": docs})
+}
+
+// DELETE /api/account {"confirm_email": "..."} -> apaga o usuário e tudo dele.
+func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r)
+	var in struct {
+		ConfirmEmail string `json:"confirm_email"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(in.ConfirmEmail), u.Email) {
+		writeErr(w, 400, "confirmação não confere com o e-mail da conta")
+		return
+	}
+	respond(w, map[string]bool{"ok": true}, s.Store.DeleteUser(u.ID))
 }
 
 // ---------- utilidades ----------
@@ -291,3 +381,33 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
+
+// Wrap põe cabeçalhos de segurança em TODAS as respostas (API e estáticos) e um log de acesso
+// (método, caminho, status, duração; nunca Authorization nem query string).
+func Wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer-when-downgrade")
+		h.Set("X-Frame-Options", "DENY")
+		sw := &statusWriter{ResponseWriter: w, status: 200}
+		start := time.Now()
+		next.ServeHTTP(sw, r)
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, sw.status, time.Since(start).Round(time.Millisecond))
+	})
+}
+
+// O botão do Google Sign-In usa script, iframe, stylesheet (e, no fluxo novo, requests) de
+// accounts.google.com; os estilos inline vêm do próprio botão/Svelte.
+const csp = "default-src 'self'; script-src 'self' https://accounts.google.com; frame-src https://accounts.google.com; " +
+	"connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: https://*.googleusercontent.com; " +
+	"style-src 'self' 'unsafe-inline' https://accounts.google.com; font-src 'self'; frame-ancestors 'none'; " +
+	"base-uri 'self'; form-action 'self'"
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(c int) { w.status = c; w.ResponseWriter.WriteHeader(c) }

@@ -1,11 +1,13 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func open(t *testing.T) (*Store, string) {
@@ -157,5 +159,132 @@ func TestTextoContaRunasNaoBytes(t *testing.T) {
 	}
 	if err := text("nome", strings.Repeat("ç", maxText+1), maxText, true); err == nil {
 		t.Error("201 runas deveriam ser recusadas")
+	}
+}
+
+func count(t *testing.T, st *Store, q string, args ...any) (n int) {
+	t.Helper()
+	if err := st.db.QueryRow(q, args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+func TestSyncOpsTemTeto(t *testing.T) {
+	// 500 upserts repetidos (op_id novo a cada um) em 5 lotes: sem a poda por contagem viraria 2500 linhas.
+	st, uid := open(t)
+	st.Push(uid, []Op{acc("a1")})
+	n := 0
+	for b := 0; b < 5; b++ {
+		ops := make([]Op, 500)
+		for i := range ops {
+			n++
+			ops[i] = acc("a1")
+			ops[i].OpID = fmt.Sprint("novo-", n)
+		}
+		if _, err := st.Push(uid, ops); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := count(t, st, `SELECT COUNT(*) FROM sync_ops WHERE user_id=?`, uid); got != KeepSyncOps {
+		t.Errorf("sync_ops = %d, quero %d", got, KeepSyncOps)
+	}
+	// o mais recente continua lembrado (reenvio vira dup); o mais antigo foi esquecido
+	if res, _ := st.Push(uid, []Op{func() Op { o := acc("a1"); o.OpID = "novo-2500"; return o }()}); res[0].Status != "dup" {
+		t.Errorf("op recente deveria ser dup: %+v", res[0])
+	}
+}
+
+func TestContadoresDeUsoBatemComAVarredura(t *testing.T) {
+	st, uid := open(t)
+	for i := 0; i < 4; i++ {
+		st.Push(uid, []Op{acc(fmt.Sprint("a", i))})
+	}
+	st.Push(uid, []Op{{OpID: "d1", Kind: "account", ID: "a1", Action: "delete"},
+		{OpID: "e1", Kind: "account", ID: "a2", Action: "upsert",
+			Data: json.RawMessage(`{"name":"` + strings.Repeat("é", 30) + `","type":"cash","initial_balance_cents":0,"archived":false}`)}})
+	read := func() (r, b, tt int64) {
+		st.db.QueryRow(`SELECT rows_n,bytes_n,total_n FROM users WHERE id=?`, uid).Scan(&r, &b, &tt)
+		return
+	}
+	r, b, tt := read()
+	if _, err := st.db.Exec(recountSQL); err != nil {
+		t.Fatal(err)
+	}
+	r2, b2, tt2 := read()
+	if r != r2 || b != b2 || tt != tt2 || r != 3 || tt != 4 {
+		t.Errorf("contadores %d/%d/%d != varredura %d/%d/%d", r, b, tt, r2, b2, tt2)
+	}
+}
+
+func TestLimiteDiarioDeOps(t *testing.T) {
+	defer func(n int64) { MaxOpsPerDay = n }(MaxOpsPerDay)
+	MaxOpsPerDay = 3
+	st, uid := open(t)
+	res, _ := st.Push(uid, []Op{acc("a1"), acc("a2")})
+	res2, _ := st.Push(uid, []Op{acc("a3"), acc("a4")})
+	if res[0].Status != "ok" || res[1].Status != "ok" || res2[0].Status != "ok" ||
+		res2[1].Status != "rejected" || !strings.Contains(res2[1].Error, "limite diário") {
+		t.Errorf("limite diário: %+v %+v", res, res2)
+	}
+	st.db.Exec(`UPDATE users SET ops_day='2000-01-01'`) // virou o dia
+	if res, _ := st.Push(uid, []Op{acc("a5")}); res[0].Status != "ok" {
+		t.Errorf("novo dia deveria zerar: %+v", res[0])
+	}
+}
+
+func TestMigraBancoAntigoSemUserVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "velho.db")
+	old, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{schemaSQL,
+		`INSERT INTO users(id,google_sub,email) VALUES('u1','s1','a@x.com')`,
+		`INSERT INTO entities(user_id,kind,id,rev,data) VALUES('u1','account','a1',1,'{"name":"A"}'),('u1','account','a2',2,'{}')`,
+		`UPDATE entities SET deleted_at=datetime('now') WHERE id='a2'`} {
+		if _, err := old.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v int
+	st.db.QueryRow(`PRAGMA user_version`).Scan(&v)
+	if v != len(migrations)+1 {
+		t.Errorf("user_version = %d, quero %d", v, len(migrations)+1)
+	}
+	var r, b, tt int
+	st.db.QueryRow(`SELECT rows_n,bytes_n,total_n FROM users WHERE id='u1'`).Scan(&r, &b, &tt)
+	if r != 1 || b != len(`{"name":"A"}`) || tt != 2 || count(t, st, `SELECT COUNT(*) FROM entities`) != 2 {
+		t.Errorf("dados/contadores após migrar: %d %d %d", r, b, tt)
+	}
+	st.Close()
+	st2, err := Open(path) // reabrir não repete migração
+	if err != nil {
+		t.Fatal(err)
+	}
+	st2.Close()
+}
+
+func TestDeleteUserEmCascata(t *testing.T) {
+	st, uid := open(t)
+	b, _ := st.UpsertGoogleUser("sub2", "b@x.com", "B", "", 0)
+	st.Push(uid, []Op{acc("a1")})
+	st.Push(b.ID, []Op{acc("b1")})
+	st.NewSession(uid, "x", time.Hour)
+	if err := st.DeleteUser(uid); err != nil {
+		t.Fatal(err)
+	}
+	for _, tbl := range []string{"entities", "sessions", "sync_ops"} {
+		if n := count(t, st, `SELECT COUNT(*) FROM `+tbl+` WHERE user_id=?`, uid); n != 0 {
+			t.Errorf("%s: %d linhas sobraram", tbl, n)
+		}
+		if n := count(t, st, `SELECT COUNT(*) FROM `+tbl+` WHERE user_id=?`, b.ID); tbl != "sessions" && n != 1 {
+			t.Errorf("%s do outro usuário: %d", tbl, n)
+		}
 	}
 }

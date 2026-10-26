@@ -330,7 +330,14 @@ func TestSyncCategoriaSemCiclo(t *testing.T) {
 		prev = id
 	}
 	st := e.push("", ops...)
-	if !strings.HasPrefix(st[10], "rejected") || st[0] != "ok" {
+	rejected := 0
+	for _, x := range st {
+		if strings.HasPrefix(x, "rejected") {
+			rejected++
+		}
+	}
+	// o elo recusado deixa os filhos órfãos: eles "curam" (parent_id vira null) e passam
+	if rejected != 1 || st[0] != "ok" {
 		t.Errorf("cadeia > 10 níveis deveria ser recusada no fim: %v", st)
 	}
 }
@@ -341,4 +348,43 @@ func TestSyncPullDevolveRev(t *testing.T) {
 	if _, o, _ := e.do("GET", "/api/sync?since=0", "", nil); o["rev"].(float64) != 2 {
 		t.Errorf("rev = %v, quero 2", o["rev"])
 	}
+}
+
+func TestSyncCategoriaInexistenteOuExcluidaCura(t *testing.T) {
+	e := newEnv(t)
+	cat := func(id string, parent any) m {
+		return upsert("category", id, m{"name": id, "kind": "expense", "parent_id": parent, "color": ""})
+	}
+	e.push("", upsert("account", "acc1", account("A")), cat("c1", nil), op("category", "c1", "delete", nil))
+	wantStatus(t, e.push("", upsert("transaction", "t1", expense("acc1", m{"category_id": "c1"})),
+		upsert("transaction", "t2", expense("acc1", m{"category_id": "nunca-existiu"})),
+		upsert("recurrence", "r1", m{"kind": "expense", "description": "x", "amount_cents": 1, "account_id": "acc1",
+			"category_id": "c1", "frequency": "monthly", "interval_n": 1, "start_date": "2026-10-01", "active": true}),
+		cat("c2", "c1")), "ok", "ok", "ok", "ok")
+	ch, _, _ := e.pull("", 0)
+	for _, c := range ch {
+		if c.Deleted {
+			continue
+		}
+		for _, f := range []string{"category_id", "parent_id"} {
+			if v, ok := c.Data[f]; ok && v != nil {
+				t.Errorf("%s/%s ficou com %s=%v", c.Kind, c.ID, f, v)
+			}
+		}
+	}
+	// as outras referências continuam recusadas
+	wantStatus(t, e.push("", upsert("transaction", "t3", expense("naoexiste", nil)),
+		upsert("transaction", "t4", expense("acc1", m{"recurrence_id": "nao"})),
+		upsert("transaction", "t5", expense("acc1", m{"kind": "transfer", "transfer_account_id": "nao"}))),
+		"rejected: conta inválida", "rejected: recorrência inválida",
+		"rejected: transferência exige uma conta de destino válida e diferente")
+}
+
+func TestSyncDataForaDoIntervalo(t *testing.T) {
+	e := newEnv(t)
+	e.push("", upsert("account", "acc1", account("A")))
+	wantStatus(t, e.push("", upsert("transaction", "t1", expense("acc1", m{"date": "0050-01-01"})),
+		upsert("transaction", "t2", expense("acc1", m{"date": "2300-01-01"})),
+		upsert("transaction", "t3", expense("acc1", m{"date": "2200-12-31"}))),
+		"rejected: data inválida (use YYYY-MM-DD)", "rejected: data inválida (use YYYY-MM-DD)", "ok")
 }

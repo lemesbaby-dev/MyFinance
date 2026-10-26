@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 )
 
 // Limites por usuário e por requisição (cadastro aberto + VM pequena).
@@ -17,6 +18,10 @@ const (
 var (
 	MaxRows  int64 = 50_000
 	MaxBytes int64 = 20 << 20
+	// MaxOpsPerDay: operações por usuário por dia (UTC), contando as recusadas e as dup.
+	MaxOpsPerDay int64 = 20_000
+	// KeepSyncOps: op_ids lembrados por usuário (um reenvio mais velho que isso não existe).
+	KeepSyncOps = 2000
 )
 
 // Op é uma alteração vinda da fila do app. Action: "upsert" | "delete".
@@ -65,11 +70,16 @@ func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
 	if _, err := tx.Exec(`DELETE FROM sync_ops WHERE user_id=? AND applied_at < datetime('now','-90 days')`, uid); err != nil {
 		return nil, err
 	}
+	// Contadores mantidos em users (recountSQL os recalcula): nada de varrer `entities` a cada push.
 	var u usage
-	if err := tx.QueryRow(`SELECT COUNT(*), COALESCE(SUM(deleted_at IS NULL),0),
-		COALESCE(SUM(CASE WHEN deleted_at IS NULL THEN length(CAST(data AS BLOB)) END),0)
-		FROM entities WHERE user_id=?`, uid).Scan(&u.total, &u.rows, &u.bytes); err != nil {
+	var day string
+	var opsN int64
+	if err := tx.QueryRow(`SELECT rows_n, bytes_n, total_n, ops_day, ops_n FROM users WHERE id=?`, uid).
+		Scan(&u.rows, &u.bytes, &u.total, &day, &opsN); err != nil {
 		return nil, err
+	}
+	if today := time.Now().UTC().Format("2006-01-02"); day != today {
+		day, opsN = today, 0
 	}
 	ex := func(kind, id string) bool {
 		var n int
@@ -95,7 +105,10 @@ func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
 		res := OpResult{OpID: op.OpID, Status: "ok"}
 		reject := func(msg string) { res.Status, res.Error = "rejected", msg }
 		var seen int
+		opsN++
 		switch {
+		case opsN > MaxOpsPerDay:
+			reject("limite diário de operações excedido")
 		case !validID(op.OpID) || !validID(op.ID):
 			reject("id inválido")
 		case op.Action != "upsert" && op.Action != "delete":
@@ -118,6 +131,15 @@ func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
 			}
 		}
 		out = append(out, res)
+	}
+	if _, err := tx.Exec(`UPDATE users SET rows_n=?, bytes_n=?, total_n=?, ops_day=?, ops_n=? WHERE id=?`,
+		u.rows, u.bytes, u.total, day, opsN, uid); err != nil {
+		return nil, err
+	}
+	// Mantém só os últimos KeepSyncOps op_ids (poda por contagem; ≤ KeepSyncOps+lote linhas a ordenar).
+	if _, err := tx.Exec(`DELETE FROM sync_ops WHERE user_id=? AND rowid <=
+		(SELECT rowid FROM sync_ops WHERE user_id=? ORDER BY rowid DESC LIMIT 1 OFFSET ?)`, uid, uid, KeepSyncOps); err != nil {
+		return nil, err
 	}
 	return out, tx.Commit()
 }
@@ -166,7 +188,7 @@ func (s *Store) apply(tx *sql.Tx, uid string, op Op, res OpResult, ex exists, pa
 		var doc map[string]any
 		_ = json.Unmarshal([]byte(old), &doc)
 		for f, k := range refKinds {
-			if id, ok := doc[f].(string); ok {
+			if id, ok := doc[f].(string); ok && k != "category" { // categoria excluída é "curada" (vira null)
 				prev[k+"/"+id] = true
 			}
 		}
@@ -246,4 +268,25 @@ func (s *Store) Pull(uid string, since int64, limit int) (changes []Change, curs
 		cursor = changes[n-1].Rev
 	}
 	return changes, cursor, more, nil
+}
+
+// Export devolve todos os documentos vivos do usuário (sem tombstones), com rev, em ordem de rev.
+func (s *Store) Export(uid string) ([]Change, error) {
+	rows, err := s.db.Query(`SELECT kind,id,rev,data FROM entities
+		WHERE user_id=? AND deleted_at IS NULL ORDER BY rev`, uid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Change{}
+	for rows.Next() {
+		var c Change
+		var data string
+		if err := rows.Scan(&c.Kind, &c.ID, &c.Rev, &data); err != nil {
+			return nil, err
+		}
+		c.Data = json.RawMessage(data)
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }

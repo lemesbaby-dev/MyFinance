@@ -102,20 +102,58 @@ func TestLimiterEClientIP(t *testing.T) {
 	for i := 0; i < 1500; i++ { // IPs que nunca voltam
 		l.hits[strconv.Itoa(i)] = []time.Time{time.Now().Add(-2 * time.Minute)}
 	}
+	l.allow("3.3.3.3", 1) // varredura foi há < 1 min: não varre de novo
+	if len(l.hits) < 1500 {
+		t.Errorf("varreu a cada requisição: %d chaves", len(l.hits))
+	}
+	l.swept = time.Now().Add(-2 * time.Minute)
 	l.allow("3.3.3.3", 1)
 	if len(l.hits) > 3 {
 		t.Errorf("mapa não foi limpo: %d chaves", len(l.hits))
 	}
 
+	s := &Server{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("X-Forwarded-For", "9.9.9.9")
 	r.RemoteAddr = "203.0.113.5:1234"
-	if ip := clientIP(r); ip != "203.0.113.5" {
+	if ip := s.clientIP(r); ip != "203.0.113.5" {
 		t.Errorf("XFF forjado confiado: %s", ip)
 	}
 	r.RemoteAddr = "127.0.0.1:1234"
-	if ip := clientIP(r); ip != "9.9.9.9" {
+	if ip := s.clientIP(r); ip != "9.9.9.9" {
 		t.Errorf("atrás do proxy deveria usar XFF: %s", ip)
+	}
+}
+
+func TestClientIPv6ETrustedProxy(t *testing.T) {
+	s := &Server{}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "[2001:db8:1:2:aaaa:bbbb:cccc:dddd]:1"
+	a := s.clientIP(r)
+	r.RemoteAddr = "[2001:db8:1:2:1111:2222:3333:4444]:1"
+	if b := s.clientIP(r); a != b || a != "2001:db8:1:2::/64" {
+		t.Errorf("IPv6 deveria virar /64: %s %s", a, b)
+	}
+	r.RemoteAddr = "[2001:db8:1:3::1]:1"
+	if s.clientIP(r) == a {
+		t.Error("/64 diferentes viraram a mesma chave")
+	}
+	tp, err := ParseTrustedProxies("10.0.0.0/8, 192.168.1.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s = &Server{TrustedProxies: tp}
+	r = httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Forwarded-For", "9.9.9.9")
+	for remote, want := range map[string]string{"10.1.2.3:5": "9.9.9.9", "192.168.1.5:5": "9.9.9.9",
+		"192.168.1.6:5": "192.168.1.6", "127.0.0.1:5": "127.0.0.1"} { // com TRUSTED_PROXY, loopback deixa de valer
+		r.RemoteAddr = remote
+		if got := s.clientIP(r); got != want {
+			t.Errorf("%s -> %s, quero %s", remote, got, want)
+		}
+	}
+	if _, err := ParseTrustedProxies("lixo"); err == nil {
+		t.Error("TRUSTED_PROXY inválido deveria falhar")
 	}
 }
 
@@ -221,4 +259,108 @@ func TestCadastroEncerrado(t *testing.T) {
 		t.Errorf("2º usuário com MAX_USERS=1 deveria dar 403, deu %d", code)
 	}
 	e.login("ana", "ana@x.com") // quem já existe continua entrando
+}
+
+func TestCabecalhosDeSegurancaEHealth(t *testing.T) {
+	e := newEnv(t)
+	h := Wrap(e.h)
+	for _, path := range []string{"/api/health", "/api/sync", "/nada"} { // 200, 401, 404: em todas
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		for k, want := range map[string]string{"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
+			"Referrer-Policy": "no-referrer-when-downgrade"} {
+			if got := rec.Header().Get(k); got != want {
+				t.Errorf("%s %s = %q", path, k, got)
+			}
+		}
+		csp := rec.Header().Get("Content-Security-Policy")
+		for _, part := range []string{"default-src 'self'", "frame-ancestors 'none'", "frame-src https://accounts.google.com"} {
+			if !strings.Contains(csp, part) {
+				t.Errorf("%s CSP sem %q: %s", path, part, csp)
+			}
+		}
+	}
+	if code, _, _ := e.do("GET", "/api/health", "-", nil); code != 200 {
+		t.Errorf("health = %d", code)
+	}
+	e.st.Close() // banco fora do ar
+	if code, _, _ := e.do("GET", "/api/health", "-", nil); code != 503 {
+		t.Errorf("health com banco fechado = %d, quero 503", code)
+	}
+}
+
+func TestExportEIsolamento(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob", "bob@x.com")
+	e.push("", upsert("account", "acc1", account("Ana")), upsert("account", "acc2", account("Velha")),
+		upsert("transaction", "tx1", expense("acc1", nil)), op("account", "acc2", "delete", nil))
+	e.push(bob, upsert("account", "accB", account("Bob")))
+	req := httptest.NewRequest("GET", "/api/export?format=json", nil)
+	req.Header.Set("Authorization", "Bearer "+e.tok)
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("export: %d %v", rec.Code, rec.Header())
+	}
+	var out struct {
+		Entities []struct {
+			ID  string
+			Rev int64
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Entities) != 2 || out.Entities[0].Rev == 0 { // sem tombstone (acc2) e sem dados do Bob
+		t.Errorf("export: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "accB") {
+		t.Error("export vazou dados de outro usuário")
+	}
+	if code, _, _ := e.do("GET", "/api/export?format=csv", "", nil); code != 400 {
+		t.Errorf("format=csv = %d, quero 400", code)
+	}
+	if code, _, _ := e.do("GET", "/api/export", "-", nil); code != 401 {
+		t.Errorf("export sem sessão = %d", code)
+	}
+}
+
+func TestExcluirConta(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob", "bob@x.com")
+	e.push("", upsert("account", "acc1", account("Ana")))
+	e.push(bob, upsert("account", "accB", account("Bob")))
+	for _, body := range []m{{"confirm_email": "bob@x.com"}, {"confirm_email": ""}, {}} {
+		if code, _, _ := e.do("DELETE", "/api/account", "", body); code != 400 {
+			t.Errorf("confirmação errada %v = %d, quero 400", body, code)
+		}
+	}
+	if ch, _, _ := e.pull("", 0); len(ch) != 1 {
+		t.Fatal("conta apagada sem confirmação")
+	}
+	if code, o, _ := e.do("DELETE", "/api/account", "", m{"confirm_email": "ANA@x.com"}); code != 200 {
+		t.Fatalf("delete: %d %v", code, o)
+	}
+	if code, _, _ := e.do("GET", "/api/auth/me", "", nil); code != 401 {
+		t.Errorf("sessão sobreviveu à exclusão: %d", code)
+	}
+	if ch, _, _ := e.pull(bob, 0); len(ch) != 1 { // o Bob não foi afetado
+		t.Errorf("dados do Bob: %d", len(ch))
+	}
+}
+
+func TestPullTemRateLimit(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < 300; i++ {
+		if code, _, _ := e.do("GET", "/api/sync?since=0", "", nil); code != 200 {
+			t.Fatalf("pull %d = %d", i, code)
+		}
+	}
+	if code, _, _ := e.do("GET", "/api/sync?since=0", "", nil); code != 429 {
+		t.Errorf("pull 301 = %d, quero 429", code)
+	}
+	bob := e.login("bob", "bob@x.com") // o limite é por usuário
+	if code, _, _ := e.do("GET", "/api/sync?since=0", bob, nil); code != 200 {
+		t.Errorf("limite vazou para outro usuário: %d", code)
+	}
 }

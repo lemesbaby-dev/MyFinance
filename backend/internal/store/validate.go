@@ -126,6 +126,9 @@ func validateData(kind, id string, raw json.RawMessage, ex exists, parentOf func
 	case "category":
 		var c categoryData
 		if err = strictDecode(raw, &c); err == nil {
+			if c.ParentID != nil && *c.ParentID != id && !ex("category", *c.ParentID) {
+				c.ParentID = nil // mãe inexistente/excluída: cura em vez de recusar
+			}
 			err = firstErr(text("nome", c.Name, maxText, true), text("cor", c.Color, 20, false),
 				cond(oneOf(c.Kind, "income", "expense"), "tipo deve ser income ou expense"),
 				cond(c.ParentID == nil || (*c.ParentID != id && ex("category", *c.ParentID)), "categoria-mãe inválida"),
@@ -135,11 +138,13 @@ func validateData(kind, id string, raw json.RawMessage, ex exists, parentOf func
 	case "recurrence":
 		var r recurrenceData
 		if err = strictDecode(raw, &r); err == nil {
+			if !refOK(ex, "category", r.CategoryID) {
+				r.CategoryID = nil // categoria inexistente/excluída: cura em vez de recusar
+			}
 			err = firstErr(text("descrição", r.Description, maxText, true),
 				cond(oneOf(r.Kind, "income", "expense"), "tipo deve ser income ou expense"),
 				cond(r.AmountCents > 0 && r.AmountCents < maxCents, "valor deve ser maior que zero"),
 				cond(ex("account", r.AccountID), "conta inválida"),
-				cond(refOK(ex, "category", r.CategoryID), "categoria inválida"),
 				ruleErr(r))
 		}
 		out = r
@@ -148,6 +153,9 @@ func validateData(kind, id string, raw json.RawMessage, ex exists, parentOf func
 		if err = strictDecode(raw, &t); err == nil {
 			if t.Status == "" {
 				t.Status = "pending"
+			}
+			if !refOK(ex, "category", t.CategoryID) {
+				t.CategoryID = nil // categoria inexistente/excluída: cura em vez de recusar
 			}
 			err = txErr(t, ex)
 		}
@@ -191,7 +199,14 @@ func firstErr(errs ...error) error {
 
 const maxInterval = 1000
 
-func parseDate(s string) (time.Time, error) { return time.ParseInLocation("2006-01-02", s, time.UTC) }
+// parseDate: YYYY-MM-DD válido, ano 1900..2200 (mesmo intervalo do app).
+func parseDate(s string) (time.Time, error) {
+	t, err := time.ParseInLocation("2006-01-02", s, time.UTC)
+	if err == nil && (t.Year() < 1900 || t.Year() > 2200) {
+		err = errors.New("ano fora do intervalo")
+	}
+	return t, err
+}
 
 func ruleErr(r recurrenceData) error {
 	start, err := parseDate(r.StartDate)
@@ -228,7 +243,6 @@ func txErr(t transactionData, ex exists) error {
 		cond(t.AmountCents > 0 && t.AmountCents < maxCents, "valor deve ser maior que zero"),
 		cond(oneOf(t.Status, "pending", "paid"), "status deve ser pending ou paid"),
 		cond(ex("account", t.AccountID), "conta inválida"),
-		cond(refOK(ex, "category", t.CategoryID), "categoria inválida"),
 		cond(refOK(ex, "recurrence", t.RecurrenceID), "recorrência inválida"),
 	); err != nil {
 		return err

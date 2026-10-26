@@ -113,3 +113,9 @@ func (s *Store) RevokeSession(token string) error {
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE token_hash=?`, hashToken(token))
 	return err
 }
+
+// DeleteUser apaga o usuário e, em cascata, sessões, documentos e sync_ops.
+func (s *Store) DeleteUser(uid string) error {
+	_, err := s.db.Exec(`DELETE FROM users WHERE id=?`, uid)
+	return err
+}
