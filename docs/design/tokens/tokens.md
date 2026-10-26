@@ -57,3 +57,6 @@ Ao mudar na UI: setar/remover o atributo e gravar/remover a chave (mesma lógica
 Regra: o modo daltônico NÃO dispensa os outros canais. Glifo por categoria, sinal +/−, ícone de relógio em atrasado e rótulo de status valem nos dois modos; o modo só reduz a dependência de matiz.
 
 Observação: no claro+cvd a despesa (#6D1503) e o "previsto" ficam escuros (AA sobre creme exige); a separação vem de luminância/matiz, não de saturação.
+
+## Implementação (Fase 1)
+`frontend/src/tokens.css` é a cópia ativa (importada em `main.js`); `tokens.css` desta pasta segue como insumo do `contraste.mjs` — alterou um, altere o outro. `npm run lint:css` (stylelint) barra cor literal (hex, rgb/hsl…, nomes) e `font-family` literal fora de `tokens.css`/`fonts.css`. **Pendência Fase 4:** espaçamento literal (padding/margin/gap em rem/px) ainda não é barrado — centenas de usos nas telas atuais; ligar a regra à medida que cada tela migrar.
