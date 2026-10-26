@@ -5,9 +5,11 @@
 //    offline já na primeira visita (sem isso, os arquivos carregados antes do SW existir ficariam de fora).
 //  - /assets/* (nome com hash, imutável): cache primeiro; o que faltar é baixado e guardado.
 //  - páginas e demais arquivos: rede primeiro, com limite de 3 s (wifi sem internet não trava), depois cache.
+//    A navegação só entra no cache se for HTML e citar /assets/ (um portal cativo ou página de erro
+//    não pode sobrescrever o casco do app).
 //  Mudou a lógica deste arquivo? Suba o número em CACHE: a ativação apaga os caches antigos.
 // ponytail: arquivos /assets/ de versões antigas ficam no cache até o próximo bump de CACHE (poucas centenas de KB).
-const CACHE = 'financas-shell-v2';
+const CACHE = 'financas-shell-v3';
 const STATIC = ['/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 const refs = (text, re) => [...text.matchAll(re)].map((m) => m[1]);
@@ -39,6 +41,12 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+// Devolve a resposta só se parecer o casco do app (HTML que referencia /assets/).
+const shellFrom = async (res) => {
+  if (!(res.headers.get('content-type') ?? '').includes('text/html')) return null;
+  return (await res.clone().text()).includes('/assets/') ? res : null;
+};
+
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
 self.addEventListener('fetch', (e) => {
@@ -63,7 +71,8 @@ self.addEventListener('fetch', (e) => {
     const cache = await caches.open(CACHE);
     try {
       const res = await withTimeout(fetch(req), 3000);
-      if (res.ok) cache.put(page ? '/' : req, res.clone());
+      if (res.ok && !page) cache.put(req, res.clone());
+      if (res.ok && page) e.waitUntil(shellFrom(res.clone()).then((r) => r && cache.put('/', r)));
       return res;
     } catch {
       // Página: devolve o app (é uma SPA). Outros arquivos: só o que já foi guardado.

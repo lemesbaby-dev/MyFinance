@@ -4,25 +4,35 @@
 
 export const MAX_INTERVAL = 1000;
 export const MAX_INSTALLMENTS = 120;
-const MAX_OCCURRENCES = 5000; // protege contra regras absurdas (ex.: diária por 100 anos)
+const MAX_OCCURRENCES = 5000; // por chamada; materialize continua de onde parou na próxima abertura
+// Mesmos limites do servidor (store/validate.go): valor em centavos < 1e14, ano 1900..2200.
+export const MAX_CENTS = 1e14;
+export const MIN_YEAR = 1900;
+export const MAX_YEAR = 2200;
+export const validCents = (c) => Number.isSafeInteger(c) && Math.abs(c) < MAX_CENTS;
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'];
 
 // ---------- datas ----------
 
 const pad = (n, w = 2) => String(n).padStart(w, '0');
-const ymd = (y, m, d) => `${pad(y, 4)}-${pad(m)}-${pad(d)}`; // m = 1..12
+// Ano fora de 1900..2200 é erro (nunca vira 19xx por causa do Date.UTC nem passa batido ao somar datas).
+const ymd = (y, m, d) => {
+  if (y < MIN_YEAR || y > MAX_YEAR) throw new Error(`data fora do intervalo ${MIN_YEAR}-${MAX_YEAR}`);
+  return `${pad(y, 4)}-${pad(m)}-${pad(d)}`; // m = 1..12
+};
 const daysIn = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
 export function parseISO(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s ?? '');
   if (m) {
     const [y, mo, d] = [+m[1], +m[2], +m[3]];
-    if (mo >= 1 && mo <= 12 && d >= 1 && d <= daysIn(y, mo)) return { y, m: mo, d };
+    if (y >= MIN_YEAR && y <= MAX_YEAR && mo >= 1 && mo <= 12 && d >= 1 && d <= daysIn(y, mo)) return { y, m: mo, d };
   }
   throw new Error(`data inválida: ${s}`);
 }
 
+/** Validador de data compartilhado pelos formulários e pelo app (YYYY-MM-DD real, ano 1900..2200). */
 export const isValidISO = (s) => {
   try { parseISO(s); return true; } catch { return false; }
 };
@@ -95,15 +105,20 @@ function startN(r, from) {
 }
 
 /** Datas da regra com from <= data <= to, respeitando end_date. */
-export function occurrences(rule, from, to) {
+export const occurrences = (rule, from, to) => scan(rule, from, to).dates;
+
+// capped = parou no teto (ainda havia datas até `to`), não por ter chegado ao fim.
+function scan(rule, from, to) {
   validateRule(rule);
-  const out = [];
+  const dates = [];
+  let capped = true;
   for (let i = 0, n = startN(rule, from); i < MAX_OCCURRENCES; i++, n++) {
-    const d = nth(rule, n);
-    if (d > to || (rule.end_date && d > rule.end_date)) break;
-    if (d >= from) out.push(d);
+    let d;
+    try { d = nth(rule, n); } catch { capped = false; break; } // passou do ano 2200: acabou
+    if (d > to || (rule.end_date && d > rule.end_date)) { capped = false; break; }
+    if (d >= from) dates.push(d);
   }
-  return out;
+  return { dates, capped };
 }
 
 /** Até onde materializar as ocorrências: hoje + N meses. */
@@ -125,14 +140,16 @@ export function materialize(rec, horizonISO, newId) {
   if (!rec.active) return { txs: [], generated_until: rec.generated_until ?? null };
   const from = rec.generated_until ? addDays(rec.generated_until, 1) : rec.start_date;
   if (from > horizonISO || (rec.end_date && from > rec.end_date)) return { txs: [], generated_until: rec.generated_until ?? null };
-  const txs = occurrences(rec, from, horizonISO).map((date) => ({
+  const { dates, capped } = scan(rec, from, horizonISO);
+  const txs = dates.map((date) => ({
     id: newId(),
     data: txDoc({
       kind: rec.kind, description: rec.description, amount_cents: rec.amount_cents, date,
       account_id: rec.account_id, category_id: rec.category_id ?? null, recurrence_id: rec.id,
     }),
   }));
-  return { txs, generated_until: horizonISO };
+  // No teto, só avançamos até a última data realmente gerada (o resto vem nas próximas aberturas).
+  return { txs, generated_until: capped ? dates.at(-1) : horizonISO };
 }
 
 // ---------- parcelas ----------
@@ -166,12 +183,14 @@ function movements(t) {
  * Saldo previsto até `until` = atual + pendentes com vencimento <= until (inclui atrasados).
  * Calcula TODAS as contas (uma transferência para conta arquivada não perde o crédito), mas os totais
  * e `accounts` só têm as ativas; `all` traz também as arquivadas (com `archived`) para exibir o valor real.
+ * `excluded`: Set de ids recusados pelo servidor (contas e lançamentos); ficam fora dos saldos.
  */
-export function balances(accounts, txs, until) {
+export function balances(accounts, txs, until, excluded = new Set()) {
   const by = new Map(
-    accounts.map((a) => [a.id, { id: a.id, name: a.name, type: a.type, archived: !!a.archived, current_cents: a.initial_balance_cents, projected_cents: a.initial_balance_cents }]),
+    accounts.filter((a) => !excluded.has(a.id)).map((a) => [a.id, { id: a.id, name: a.name, type: a.type, archived: !!a.archived, current_cents: a.initial_balance_cents, projected_cents: a.initial_balance_cents }]),
   );
   for (const t of txs) {
+    if (excluded.has(t.id)) continue;
     const paid = t.status === 'paid';
     if (!paid && t.date > until) continue;
     for (const [acc, d] of movements(t)) {
@@ -198,8 +217,9 @@ export function balances(accounts, txs, until) {
  * os saldos (balances) não dependem dele. Transferência aparece na lista mas fica fora dos totais.
  * `overdue`: pendentes vencidos antes do mês exibido (só no mês atual/futuro e fora do filtro 'paid').
  * `archived`: Set de ids de contas arquivadas; os lançamentos delas ficam de fora.
+ * `excluded`: ids de lançamentos recusados pelo servidor: continuam na lista (a interface os marca), mas não somam nos totais.
  */
-export function monthView(allTxs, month, filter, today, archived = new Set()) {
+export function monthView(allTxs, month, filter, today, archived = new Set(), excluded = new Set()) {
   const txs = archived.size ? allTxs.filter((t) => !archived.has(t.account_id)) : allTxs;
   const order = (a, b) => a.date.localeCompare(b.date) || a.description.localeCompare(b.description, 'pt-BR');
   const keep = (t) => filter === 'all' || t.status === filter;
@@ -211,6 +231,7 @@ export function monthView(allTxs, month, filter, today, archived = new Set()) {
   let income = 0, expense = 0;
   const spend = new Map();
   for (const t of rows) {
+    if (excluded.has(t.id)) continue;
     if (t.kind === 'income') income += t.amount_cents;
     else if (t.kind === 'expense') {
       expense += t.amount_cents;

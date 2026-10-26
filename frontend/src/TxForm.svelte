@@ -1,15 +1,15 @@
 <script>
   import { app, saveTx, createInstallments, createRecurrence, editRecurring } from './lib/app.svelte.js';
-  import { parseMoney, isoToday } from './lib/format.js';
-  import { MAX_INSTALLMENTS } from './lib/finance.js';
+  import { parseMoney } from './lib/format.js';
+  import { MAX_INSTALLMENTS, isValidISO, todayISO } from './lib/finance.js';
   import Scope from './Scope.svelte';
   import { dialog } from './lib/a11y.js';
 
   // tx = lançamento existente (edição); sem tx = novo.
   let { tx = null, onclose } = $props();
 
-  const editing = !!tx;
-  const recurring = !!tx?.recurrence_id;
+  const editing = $derived(!!tx);
+  const recurring = $derived(!!tx?.recurrence_id);
   /* svelte-ignore state_referenced_locally */
   let kind = $state(tx?.kind ?? 'expense');
   /* svelte-ignore state_referenced_locally */
@@ -17,7 +17,7 @@
   /* svelte-ignore state_referenced_locally */
   let description = $state(tx?.description ?? '');
   /* svelte-ignore state_referenced_locally */
-  let date = $state(tx?.date ?? isoToday());
+  let date = $state(tx?.date ?? todayISO());
   /* svelte-ignore state_referenced_locally */
   let accountId = $state(tx?.account_id ?? app.accounts.find((a) => !a.archived)?.id);
   /* svelte-ignore state_referenced_locally */
@@ -38,7 +38,9 @@
 
   function fields() {
     const cents = parseMoney(amount);
-    if (!cents || cents <= 0) throw new Error('Informe um valor maior que zero.');
+    if (cents === null) throw new Error('Valor inválido ou acima de R$ 1 trilhão.');
+    if (cents <= 0) throw new Error('Informe um valor maior que zero.');
+    if (!isValidISO(date)) throw new Error('Data inválida. Use uma data entre 1900 e 2200.');
     if (!accountId) throw new Error('Crie uma conta primeiro (aba Contas).');
     if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) throw new Error('Escolha uma conta de destino diferente.');
     const d = description.trim() || (kind === 'transfer' ? 'Transferência' : '');

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { money, parseMoney } from './format.js';
 import {
   addMonths, addDays, occurrences, splitInstallments, balances, monthView, materialize, horizon, shiftMonth, monthEnd,
-  validateRule, parseISO, txDoc,
+  validateRule, parseISO, txDoc, isValidISO, validCents,
 } from './finance.js';
 
 const nbsp = (s) => s.replace(/ /g, ' ');
@@ -227,4 +227,59 @@ test('occurrences: regra diária antiga (desde 2012) ainda devolve a janela de 2
   assert.ok(w.length >= 2 && w.every((d) => (Date.parse(d) - Date.parse('2000-01-03')) / 86400000 % 14 === 0));
   assert.deepEqual(occurrences({ ...rec, start_date: '2000-01-31' }, '2026-02-01', '2026-04-30'), ['2026-02-28', '2026-03-31', '2026-04-30']);
   assert.deepEqual(occurrences({ ...rec, frequency: 'yearly', start_date: '1990-02-28' }, '2026-01-01', '2027-12-31'), ['2026-02-28', '2027-02-28']);
+});
+
+test('materializar: no teto de 5000, generated_until é a última data gerada e as chamadas seguintes completam sem buracos', () => {
+  const rule = { id: 'r', kind: 'expense', description: 'x', amount_cents: 1, account_id: 'a', category_id: null,
+    frequency: 'daily', interval_n: 1, start_date: '2010-01-01', end_date: null, active: true, generated_until: null };
+  const h = '2027-06-30';
+  const all = [];
+  let calls = 0;
+  while (rule.generated_until !== h && calls < 10) {
+    const m = materialize(rule, h, () => 'id' + all.length);
+    assert.ok(m.txs.length <= 5000);
+    if (rule.generated_until !== h && m.generated_until !== h) assert.equal(m.generated_until, m.txs.at(-1).data.date, 'não pula para o horizonte');
+    all.push(...m.txs);
+    rule.generated_until = m.generated_until;
+    calls++;
+  }
+  assert.ok(calls >= 2, 'precisou de mais de uma chamada');
+  const dates = all.map((t) => t.data.date);
+  assert.equal(dates[0], '2010-01-01');
+  assert.equal(dates.at(-1), h);
+  for (let i = 1; i < dates.length; i++) assert.equal(dates[i], addDays(dates[i - 1], 1), 'sem buracos nem duplicatas');
+});
+
+test('limites do servidor: valor < 1e14 e datas 1900..2200', () => {
+  assert.equal(parseMoney('999.999.999.999,99'), 99999999999999);
+  assert.equal(parseMoney('1.000.000.000.000,00'), null);
+  assert.equal(parseMoney('-1.000.000.000.000,00'), null);
+  assert.equal(parseMoney('9'.repeat(40)), null);
+  assert.equal(validCents(1e14), false);
+  assert.equal(validCents(1e14 - 1), true);
+  for (const ok of ['1900-01-01', '2200-12-31', '2026-02-28']) assert.equal(isValidISO(ok), true, ok);
+  for (const bad of ['0050-01-01', '1899-12-31', '2201-01-01', '2026-02-30', '2026-1-1', '', null]) assert.equal(isValidISO(bad), false, String(bad));
+});
+
+test('datas fora do intervalo lançam erro em vez de virar 19xx', () => {
+  assert.throws(() => parseISO('0050-01-01'));
+  assert.throws(() => addDays('1900-01-01', -1), /fora do intervalo/);
+  assert.throws(() => addMonths('2200-12-31', 1), /fora do intervalo/);
+  assert.equal(addDays('2200-12-30', 1), '2200-12-31');
+  // regra que sai do intervalo simplesmente acaba (não derruba a materialização)
+  const rule = { frequency: 'yearly', interval_n: 1000, start_date: '2026-01-01', end_date: null };
+  assert.deepEqual(occurrences(rule, '2026-01-01', '2200-12-31'), ['2026-01-01']);
+});
+
+test('saldos e visão do mês ignoram recusados (ids em `excluded`)', () => {
+  const accs = [{ id: 'a', name: 'A', type: 'checking', initial_balance_cents: 1000 }];
+  const t = (id, cents) => txDoc({ id, kind: 'expense', description: id, amount_cents: cents, date: '2026-10-10', status: 'paid', paid_at: '2026-10-10', account_id: 'a' });
+  const txs = [t('ok', 100), t('rec', 500)];
+  assert.equal(balances(accs, txs, '2026-10-31').current_cents, 400);
+  assert.equal(balances(accs, txs, '2026-10-31', new Set(['rec'])).current_cents, 900);
+  assert.equal(balances(accs, txs, '2026-10-31', new Set(['a'])).accounts.length, 0);
+  const v = monthView(txs, '2026-10', 'all', '2026-10-15', new Set(), new Set(['rec']));
+  assert.equal(v.rows.length, 2, 'continua na lista (marcado pela interface)');
+  assert.equal(v.expense_cents, 100);
+  assert.deepEqual(v.spending, [{ category_id: null, cents: 100 }]);
 });

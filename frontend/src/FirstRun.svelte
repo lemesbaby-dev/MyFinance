@@ -16,7 +16,7 @@
   async function start(e) {
     e.preventDefault();
     const cents = parseMoney(balance);
-    if (cents === null) { error = 'Saldo inválido. Exemplo: 1.250,00'; return; }
+    if (cents === null) { error = 'Saldo inválido ou fora do limite. Exemplo: 1.250,00'; return; }
     busy = true; error = '';
     try {
       await saveAccount(null, { name, type: 'checking', initial_balance_cents: cents });
