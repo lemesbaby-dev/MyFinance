@@ -12,6 +12,7 @@
   import Categories from './Categories.svelte';
   import More from './More.svelte';
   import ConfirmHost from './ui/ConfirmHost.svelte';
+  import ToastHost from './ui/ToastHost.svelte';
 
   const TABS = [['month', 'Mês'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['more', 'Mais']];
 
@@ -139,6 +140,7 @@
   </div>
 {/if}
 <ConfirmHost />
+<ToastHost />
 
 <style>
   .shell main { max-width: 42rem; margin: 0 auto; padding-bottom: 8rem; }
