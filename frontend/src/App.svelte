@@ -20,7 +20,8 @@
   let blocked = $state(false); // sobraram alterações não enviadas de outra conta neste aparelho
   let forceFirst = $state(false);
 
-  const showFirstRun = $derived(app.ready && app.accounts.length === 0 && (app.synced || forceFirst));
+  // Com itens recusados pendentes o app abre normal: o aviso fica na aba Mais e não pode ser escondido pelos "primeiros passos".
+  const showFirstRun = $derived(app.ready && app.accounts.length === 0 && app.rejected.length === 0 && (app.synced || forceFirst));
   const waitingData = $derived(app.ready && app.accounts.length === 0 && !app.synced && !forceFirst);
 
   async function boot(user) {
@@ -109,7 +110,7 @@
   <div class="shell">
     {#if !app.status.online || app.status.offline || app.status.pending || app.status.rejected || app.status.error}
       <p class="statusbar" role="status">
-        {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else}Enviando alterações…{/if}
+        {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else if app.status.pending}Enviando alterações…{/if}
         {#if app.status.pending} · {app.status.pending} por enviar{/if}
         {#if app.status.rejected} · <strong>{app.status.rejected} recusado(s) pelo servidor</strong> (veja em Mais){/if}
       </p>
