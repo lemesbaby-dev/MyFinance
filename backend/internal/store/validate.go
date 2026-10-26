@@ -1,0 +1,231 @@
+package store
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"strings"
+
+	"financas/internal/finance"
+)
+
+// Formato dos documentos sincronizados (ids são UUIDs gerados no app).
+// Qualquer campo fora destes é recusado: o servidor nunca guarda lixo.
+
+type accountData struct {
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	InitialBalanceCents int64  `json:"initial_balance_cents"`
+	Archived            bool   `json:"archived"`
+}
+
+type categoryData struct {
+	Name     string  `json:"name"`
+	Kind     string  `json:"kind"`
+	ParentID *string `json:"parent_id"`
+	Color    string  `json:"color"`
+}
+
+type recurrenceData struct {
+	Kind        string  `json:"kind"`
+	Description string  `json:"description"`
+	AmountCents int64   `json:"amount_cents"`
+	AccountID   string  `json:"account_id"`
+	CategoryID  *string `json:"category_id"`
+	Frequency   string  `json:"frequency"`
+	IntervalN   int     `json:"interval_n"`
+	StartDate   string  `json:"start_date"`
+	EndDate     *string `json:"end_date"`
+	Active      bool    `json:"active"`
+}
+
+type transactionData struct {
+	Kind              string  `json:"kind"`
+	Description       string  `json:"description"`
+	AmountCents       int64   `json:"amount_cents"`
+	Date              string  `json:"date"`
+	Status            string  `json:"status"`
+	PaidAt            *string `json:"paid_at"`
+	AccountID         string  `json:"account_id"`
+	TransferAccountID *string `json:"transfer_account_id"`
+	CategoryID        *string `json:"category_id"`
+	RecurrenceID      *string `json:"recurrence_id"`
+	InstallmentNo     *int    `json:"installment_no"`
+	InstallmentTotal  *int    `json:"installment_total"`
+	InstallmentGroup  *string `json:"installment_group"`
+	Notes             string  `json:"notes"`
+}
+
+const (
+	maxText         = 200
+	maxNotes        = 2000
+	maxInstallments = 120
+	maxCents        = 1_000_000_000_000_00 // R$ 1 trilhão: barra overflow/lixo sem atrapalhar ninguém
+)
+
+func validID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func text(name, v string, max int, required bool) error {
+	if required && strings.TrimSpace(v) == "" {
+		return errors.New(name + " é obrigatório")
+	}
+	if len(v) > max {
+		return errors.New(name + " muito longo")
+	}
+	return nil
+}
+
+func oneOf(v string, opts ...string) bool {
+	for _, o := range opts {
+		if v == o {
+			return true
+		}
+	}
+	return false
+}
+
+func strictDecode(raw json.RawMessage, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return errors.New("dados inválidos: " + err.Error())
+	}
+	return nil
+}
+
+// ref confere que id existe, não foi excluído e é do usuário (o dono vem do WHERE do exists).
+type exists func(kind, id string) bool
+
+func refOK(ex exists, kind string, id *string) bool { return id == nil || ex(kind, *id) }
+
+// validateData confere o documento e devolve o JSON normalizado a ser gravado.
+func validateData(kind, id string, raw json.RawMessage, ex exists) (json.RawMessage, error) {
+	var out any
+	var err error
+	switch kind {
+	case "account":
+		var a accountData
+		if err = strictDecode(raw, &a); err == nil {
+			err = firstErr(text("nome", a.Name, maxText, true),
+				cond(oneOf(a.Type, "checking", "cash", "savings", "investment"), "tipo de conta inválido"),
+				cond(a.InitialBalanceCents > -maxCents && a.InitialBalanceCents < maxCents, "saldo inicial fora do limite"))
+		}
+		out = a
+	case "category":
+		var c categoryData
+		if err = strictDecode(raw, &c); err == nil {
+			err = firstErr(text("nome", c.Name, maxText, true), text("cor", c.Color, 20, false),
+				cond(oneOf(c.Kind, "income", "expense"), "tipo deve ser income ou expense"),
+				cond(c.ParentID == nil || (*c.ParentID != id && ex("category", *c.ParentID)), "categoria-mãe inválida"))
+		}
+		out = c
+	case "recurrence":
+		var r recurrenceData
+		if err = strictDecode(raw, &r); err == nil {
+			err = firstErr(text("descrição", r.Description, maxText, true),
+				cond(oneOf(r.Kind, "income", "expense"), "tipo deve ser income ou expense"),
+				cond(r.AmountCents > 0 && r.AmountCents < maxCents, "valor deve ser maior que zero"),
+				cond(ex("account", r.AccountID), "conta inválida"),
+				cond(refOK(ex, "category", r.CategoryID), "categoria inválida"),
+				ruleErr(r))
+		}
+		out = r
+	case "transaction":
+		var t transactionData
+		if err = strictDecode(raw, &t); err == nil {
+			if t.Status == "" {
+				t.Status = "pending"
+			}
+			err = txErr(t, ex)
+		}
+		out = t
+	default:
+		err = errors.New("tipo de entidade inválido")
+	}
+	if err != nil {
+		return nil, err
+	}
+	norm, _ := json.Marshal(out)
+	return norm, nil
+}
+
+func cond(ok bool, msg string) error {
+	if ok {
+		return nil
+	}
+	return errors.New(msg)
+}
+
+func firstErr(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+func ruleErr(r recurrenceData) error {
+	start, err := finance.ParseDate(r.StartDate)
+	if err != nil {
+		return errors.New("start_date inválido")
+	}
+	rule := finance.Rule{Frequency: finance.Frequency(r.Frequency), Interval: r.IntervalN, Start: start}
+	if r.EndDate != nil {
+		e, err := finance.ParseDate(*r.EndDate)
+		if err != nil {
+			return errors.New("end_date inválido")
+		}
+		rule.End = &e
+	}
+	return rule.Validate()
+}
+
+func txErr(t transactionData, ex exists) error {
+	if err := firstErr(
+		text("descrição", t.Description, maxText, true), text("notas", t.Notes, maxNotes, false),
+		cond(oneOf(t.Kind, "income", "expense", "transfer"), "tipo deve ser income, expense ou transfer"),
+		cond(t.AmountCents > 0 && t.AmountCents < maxCents, "valor deve ser maior que zero"),
+		cond(oneOf(t.Status, "pending", "paid"), "status deve ser pending ou paid"),
+		cond(ex("account", t.AccountID), "conta inválida"),
+		cond(refOK(ex, "category", t.CategoryID), "categoria inválida"),
+		cond(refOK(ex, "recurrence", t.RecurrenceID), "recorrência inválida"),
+	); err != nil {
+		return err
+	}
+	if _, err := finance.ParseDate(t.Date); err != nil {
+		return errors.New("data inválida (use YYYY-MM-DD)")
+	}
+	if (t.Status == "paid") != (t.PaidAt != nil) {
+		return errors.New("paid_at deve existir se, e somente se, status for paid")
+	}
+	if t.PaidAt != nil {
+		if _, err := finance.ParseDate(*t.PaidAt); err != nil {
+			return errors.New("paid_at inválido")
+		}
+	}
+	if t.Kind == "transfer" {
+		if t.TransferAccountID == nil || *t.TransferAccountID == t.AccountID || !ex("account", *t.TransferAccountID) {
+			return errors.New("transferência exige uma conta de destino válida e diferente")
+		}
+	} else if t.TransferAccountID != nil {
+		return errors.New("conta de destino só vale para transferência")
+	}
+	if (t.InstallmentNo == nil) != (t.InstallmentTotal == nil) {
+		return errors.New("installment_no e installment_total andam juntos")
+	}
+	if t.InstallmentNo != nil && (*t.InstallmentNo < 1 || *t.InstallmentTotal > maxInstallments || *t.InstallmentNo > *t.InstallmentTotal) {
+		return errors.New("parcela inválida")
+	}
+	return nil
+}

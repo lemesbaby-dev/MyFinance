@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"financas/internal/api"
 	"financas/internal/auth"
@@ -39,26 +38,12 @@ func main() {
 	defer st.Close()
 
 	srv := &api.Server{
-		Store:         st,
-		Verifier:      &auth.Google{ClientID: clientID},
-		ClientID:      clientID,
-		MaxUsers:      maxUsers,
-		Origins:       strings.Split(env("ALLOWED_ORIGINS", "https://localhost,http://localhost,capacitor://localhost,http://localhost:5173"), ","),
-		HorizonMonths: 12,
+		Store:    st,
+		Verifier: &auth.Google{ClientID: clientID},
+		ClientID: clientID,
+		MaxUsers: maxUsers,
+		Origins:  strings.Split(env("ALLOWED_ORIGINS", "https://localhost,http://localhost,capacitor://localhost,http://localhost:5173"), ","),
 	}
-
-	// Materializa recorrências na subida e depois a cada 24h (a janela de 12 meses "rola").
-	materialize := func() {
-		if err := st.MaterializeAll(api.Horizon(time.Now(), srv.HorizonMonths)); err != nil {
-			log.Printf("recorrências: %v", err)
-		}
-	}
-	materialize()
-	go func() {
-		for range time.Tick(24 * time.Hour) {
-			materialize()
-		}
-	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", srv.Handler())
