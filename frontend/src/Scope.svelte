@@ -1,21 +1,21 @@
 <script>
   // "Só esta / Esta e as próximas / Todas as pendentes" para lançamentos que vêm de uma recorrência.
-  import { dialog } from './lib/a11y.js';
+  import Sheet from './ui/Sheet.svelte';
+  import Button from './ui/Button.svelte';
   let { verb = 'Aplicar', onpick, onclose } = $props();
 </script>
 
-<div class="scrim" role="presentation" onclick={onclose}></div>
-<div class="sheet" role="dialog" aria-modal="true" use:dialog={onclose} aria-label="{verb} em quais lançamentos?">
-  <h3>{verb} em quais lançamentos?</h3>
-  <p class="muted small">Este lançamento faz parte de uma repetição.</p>
+<Sheet center title="{verb} em quais lançamentos?" {onclose}>
+  <p class="note">Este lançamento faz parte de uma repetição.</p>
   <div class="stack">
-    <button class="btn ghost" onclick={() => onpick('one')}>Só este</button>
-    <button class="btn ghost" onclick={() => onpick('following')}>Este e os próximos</button>
-    <button class="btn ghost" onclick={() => onpick('all')}>Todos os pendentes</button>
-    <button class="btn ghost" onclick={onclose}>Cancelar</button>
+    <Button variant="secondary" block onclick={() => onpick('one')}>Só este</Button>
+    <Button variant="secondary" block onclick={() => onpick('following')}>Este e os próximos</Button>
+    <Button variant="secondary" block onclick={() => onpick('all')}>Todos os pendentes</Button>
+    <Button variant="ghost" block onclick={onclose}>Cancelar</Button>
   </div>
-</div>
+</Sheet>
 
 <style>
-  .stack { display: grid; gap: 0.5rem; }
+  .note { margin: 0; font-size: var(--fs-2); color: var(--text-muted); }
+  .stack { display: flex; flex-direction: column; gap: var(--space-2); }
 </style>

@@ -1,9 +1,15 @@
 <script>
   import { app, saveTx, createInstallments, createRecurrence, editRecurring } from './lib/app.svelte.js';
-  import { parseMoney } from './lib/format.js';
   import { MAX_INSTALLMENTS, isValidISO, todayISO } from './lib/finance.js';
   import Scope from './Scope.svelte';
-  import { dialog } from './lib/a11y.js';
+  import Sheet from './ui/Sheet.svelte';
+  import Segmented from './ui/Segmented.svelte';
+  import MoneyInput from './ui/MoneyInput.svelte';
+  import TextInput from './ui/TextInput.svelte';
+  import Select from './ui/Select.svelte';
+  import Switch from './ui/Switch.svelte';
+  import Button from './ui/Button.svelte';
+  import Banner from './ui/Banner.svelte';
 
   // tx = lançamento existente (edição); sem tx = novo.
   let { tx = null, onclose } = $props();
@@ -13,7 +19,7 @@
   /* svelte-ignore state_referenced_locally */
   let kind = $state(tx?.kind ?? 'expense');
   /* svelte-ignore state_referenced_locally */
-  let amount = $state(tx ? (tx.amount_cents / 100).toFixed(2).replace('.', ',') : '');
+  let amount = $state(tx?.amount_cents ?? 0); // centavos (MoneyInput)
   /* svelte-ignore state_referenced_locally */
   let description = $state(tx?.description ?? '');
   /* svelte-ignore state_referenced_locally */
@@ -28,23 +34,30 @@
   let done = $state(tx?.status === 'paid');
   let repeat = $state('none'); // none | daily | weekly | monthly | yearly
   let installments = $state(1);
+  const uid = $props.id();
   let error = $state('');
+  let errField = $state(''); // campo do erro de validação; vazio = erro geral (Banner)
   let busy = $state(false);
   let askScope = $state(false);
 
   const accounts = $derived(app.accounts.filter((a) => !a.archived || a.id === tx?.account_id));
   const cats = $derived(app.categories.filter((c) => c.kind === kind));
   const KINDS = [['expense', 'Despesa'], ['income', 'Receita'], ['transfer', 'Transferência']];
+  const REPEATS = [['none', 'Não repete'], ['monthly', 'Todo mês'], ['weekly', 'Toda semana'], ['yearly', 'Todo ano'], ['daily', 'Todo dia']];
+  const accOpts = $derived(accounts.map((a) => [a.id, a.name]));
+  const catOpts = $derived([['', 'Sem categoria'], ...cats.map((c) => [c.id, c.name])]);
+  const err = (f) => (errField === f ? error : '');
+  const doneLabel = $derived(kind === 'income' ? 'Já recebi' : kind === 'transfer' ? 'Já transferi' : 'Já paguei');
 
+  const bad = (field, msg) => Object.assign(new Error(msg), { field });
   function fields() {
-    const cents = parseMoney(amount);
-    if (cents === null) throw new Error('Valor inválido ou acima de R$ 1 trilhão.');
-    if (cents <= 0) throw new Error('Informe um valor maior que zero.');
-    if (!isValidISO(date)) throw new Error('Data inválida. Use uma data entre 1900 e 2200.');
-    if (!accountId) throw new Error('Crie uma conta primeiro (aba Contas).');
-    if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) throw new Error('Escolha uma conta de destino diferente.');
+    const cents = amount;
+    if (cents <= 0) throw bad('amount', 'Informe um valor maior que zero.');
+    if (!isValidISO(date)) throw bad('date', 'Data inválida. Use uma data entre 1900 e 2200.');
+    if (!accountId) throw bad('', 'Crie uma conta primeiro (aba Contas).');
+    if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) throw bad('to', 'Escolha uma conta de destino diferente.');
     const d = description.trim() || (kind === 'transfer' ? 'Transferência' : '');
-    if (!d) throw new Error('Informe a descrição.');
+    if (!d) throw bad('description', 'Informe a descrição.');
     return {
       kind, description: d, amount_cents: cents, date, account_id: accountId,
       transfer_account_id: kind === 'transfer' ? toAccountId : null,
@@ -55,14 +68,15 @@
   const paidFields = (f) => ({ ...f, status: done ? 'paid' : 'pending', paid_at: done ? (tx?.paid_at ?? date) : null });
 
   async function run(fn) {
-    busy = true; error = '';
-    try { await fn(); onclose(); } catch (e) { error = e.message; } finally { busy = false; }
+    busy = true; error = ''; errField = '';
+    try { await fn(); onclose(); } catch (e) { error = e.message; errField = e.field ?? ''; } finally { busy = false; }
   }
 
   function submit(e) {
     e.preventDefault();
     let f;
-    try { f = fields(); } catch (err) { error = err.message; return; }
+    error = ''; errField = '';
+    try { f = fields(); } catch (err) { error = err.message; errField = err.field ?? ''; return; }
     if (editing && recurring && tx.status === 'pending') { askScope = true; return; } // paga: só esta, sem perguntar
     run(async () => {
       if (editing) return saveTx(tx.id, paidFields(f));
@@ -80,52 +94,48 @@
   }
 </script>
 
-<div class="scrim" role="presentation" onclick={onclose}></div>
-<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-<form class="sheet" role="dialog" aria-modal="true" use:dialog={onclose} onsubmit={submit} aria-label={editing ? 'Editar lançamento' : 'Novo lançamento'}>
-  <div class="seg" role="group" aria-label="Tipo">
-    {#each KINDS as [k, label]}
-      <button type="button" class:on={kind === k} aria-pressed={kind === k} onclick={() => { kind = k; categoryId = ''; installments = 1; repeat = 'none'; }}>{label}</button>
-    {/each}
-  </div>
+<Sheet title={editing ? 'Editar lançamento' : 'Novo lançamento'} {onclose}>
+  <form novalidate onsubmit={submit}>
+    <Segmented label="Tipo" options={KINDS} bind:value={kind} onchange={() => { categoryId = ''; installments = 1; repeat = 'none'; }} />
 
-  <label class="field"><span>Valor (R$)</span><input bind:value={amount} inputmode="decimal" placeholder="0,00" required /></label>
-  <label class="field"><span>Descrição</span><input bind:value={description} maxlength="200" placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} /></label>
-  <label class="field"><span>{kind === 'income' ? 'Data de recebimento' : 'Vencimento'}</span><input type="date" bind:value={date} required /></label>
+    <MoneyInput label="Valor (R$)" bind:value={amount} error={err('amount')} />
+    <TextInput label="Descrição" bind:value={description} maxlength="200" placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} error={err('description')} />
+    <TextInput label={kind === 'income' ? 'Data de recebimento' : 'Vencimento'} type="date" bind:value={date} error={err('date')} />
 
-  <label class="field"><span>{kind === 'transfer' ? 'Sai da conta' : 'Conta'}</span>
-    <select bind:value={accountId}>{#each accounts as a (a.id)}<option value={a.id}>{a.name}</option>{/each}</select></label>
+    <Select label={kind === 'transfer' ? 'Sai da conta' : 'Conta'} bind:value={accountId} options={accOpts} />
 
-  {#if kind === 'transfer'}
-    <label class="field"><span>Entra na conta</span>
-      <select bind:value={toAccountId}>{#each accounts as a (a.id)}<option value={a.id}>{a.name}</option>{/each}</select></label>
-  {:else}
-    <label class="field"><span>Categoria</span>
-      <select bind:value={categoryId}><option value="">Sem categoria</option>{#each cats as c (c.id)}<option value={c.id}>{c.name}</option>{/each}</select></label>
-    {#if !editing}
-      <label class="field"><span>Repetir</span>
-        <select bind:value={repeat}>
-          <option value="none">Não repete</option><option value="monthly">Todo mês</option>
-          <option value="weekly">Toda semana</option><option value="yearly">Todo ano</option><option value="daily">Todo dia</option>
-        </select></label>
-      {#if kind === 'expense' && repeat === 'none'}
-        <label class="field"><span>Parcelas</span><input type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} /></label>
+    {#if kind === 'transfer'}
+      <Select label="Entra na conta" bind:value={toAccountId} options={accOpts} error={err('to')} />
+    {:else}
+      <Select label="Categoria" bind:value={categoryId} options={catOpts} />
+      {#if !editing}
+        <Select label="Repetir" bind:value={repeat} options={REPEATS} />
+        {#if kind === 'expense' && repeat === 'none'}
+          <TextInput label="Parcelas" type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} />
+        {/if}
       {/if}
     {/if}
-  {/if}
 
-  {#if editing || (repeat === 'none' && installments <= 1)}
-    <label class="check"><input type="checkbox" bind:checked={done} /> {kind === 'income' ? 'Já recebi' : kind === 'transfer' ? 'Já transferi' : 'Já paguei'}</label>
-  {/if}
-  {#if recurring}<p class="muted small">{tx.status === 'paid' ? 'Faz parte de uma repetição, mas já foi efetivado: a mudança vale só para este lançamento.' : 'Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.'}</p>{/if}
+    {#if editing || (repeat === 'none' && installments <= 1)}
+      <div class="opt"><span id="{uid}-done">{doneLabel}</span><Switch bind:checked={done} labelledby="{uid}-done" /></div>
+    {/if}
+    {#if recurring}<p class="note">{tx.status === 'paid' ? 'Faz parte de uma repetição, mas já foi efetivado: a mudança vale só para este lançamento.' : 'Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.'}</p>{/if}
 
-  {#if error}<p class="err" role="alert">{error}</p>{/if}
-  <div class="actions">
-    <button type="button" class="btn ghost" onclick={onclose}>Cancelar</button>
-    <button class="btn" disabled={busy}>{busy ? 'Salvando…' : 'Salvar'}</button>
-  </div>
-</form>
+    {#if error && !errField}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
+    <div class="actions">
+      <Button variant="secondary" onclick={onclose}>Cancelar</Button>
+      <Button type="submit" loading={busy}>{busy ? 'Salvando…' : 'Salvar'}</Button>
+    </div>
+  </form>
+</Sheet>
 
 {#if askScope}
   <Scope verb="Salvar" onpick={pickScope} onclose={() => (askScope = false)} />
 {/if}
+
+<style>
+  form { display: flex; flex-direction: column; gap: var(--space-3); }
+  .opt { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
+  .note { margin: 0; font-size: var(--fs-1); color: var(--text-muted); }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+</style>
