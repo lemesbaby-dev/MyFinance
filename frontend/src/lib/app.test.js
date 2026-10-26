@@ -262,3 +262,36 @@ test('ordem da fila: regra antes das ocorrências (criar e "este e os próximos"
   await A.editRecurring(t, 'following', { amount_cents: 12000, date: t.date, description: 'Gym', status: 'pending', paid_at: null });
   await assertRuleBeforeOccurrences();
 });
+
+test('recusados: ids ficam em app.rejectedIds até descartar ou corrigir', async () => {
+  await A.saveAccount('acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  await A.saveTx('t1', { kind: 'expense', description: 'x', amount_cents: 500, date: START, account_id: 'acc' });
+  await db.settle({ ack: [], rejected: [{ kind: 'transaction', id: 't1', action: 'upsert', error: 'cota' }] });
+  await A.reload();
+  assert.deepEqual([...app.rejectedIds], ['t1']);
+  assert.equal(app.rejected.length, 1);
+
+  await A.saveTx('t1', { description: 'corrigido' }); // corrigir tira da lista
+  assert.equal(app.rejectedIds.size, 0);
+  assert.equal(app.rejected.length, 0);
+
+  await db.settle({ ack: [], rejected: [{ kind: 'transaction', id: 't1', action: 'upsert', error: 'cota' }] });
+  await A.reload();
+  await A.dismissRejected(0); // descartar: some a cópia local que nunca chegou ao servidor
+  assert.equal(app.rejectedIds.size, 0);
+  assert.equal(app.transactions.some((t) => t.id === 't1'), false);
+});
+
+test('gravações locais respeitam os limites do servidor (valor < 1e14, data 1900..2200)', async () => {
+  await A.saveAccount('acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  const base = { kind: 'expense', description: 'x', amount_cents: 100, date: START, account_id: 'acc' };
+  await assert.rejects(A.saveTx(null, { ...base, amount_cents: 1e14 }), /Valor inválido/);
+  await assert.rejects(A.saveTx(null, { ...base, amount_cents: 0 }), /Valor inválido/);
+  await assert.rejects(A.saveTx(null, { ...base, date: '0050-01-01' }), /Data inválida/);
+  await assert.rejects(A.saveTx(null, { ...base, date: '2026-02-30' }), /Data inválida/);
+  await assert.rejects(A.saveAccount(null, { name: 'x', type: 'cash', initial_balance_cents: -1e14 }), /Saldo inicial/);
+  await assert.rejects(A.createInstallments({ ...base, date: '2200-12-31' }, 3), /fora do intervalo/);
+  assert.equal(app.transactions.length, 0, 'nada foi gravado');
+  await A.saveTx(null, { ...base, amount_cents: 1e14 - 1 });
+  assert.equal(app.transactions.length, 1);
+});

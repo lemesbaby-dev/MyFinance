@@ -1,5 +1,6 @@
 // Cliente da API. No navegador servido pelo Go, a base é a mesma origem ('').
-// `token` é a sessão emitida pelo servidor após o login com Google.
+// `token` é a sessão emitida pelo servidor após o login com Google; `userId` é de quem ela é
+// (lib/session.js só grava os dois depois de conferir a cópia local).
 const KEY = 'financas.conn';
 
 export function loadConn() {
@@ -11,7 +12,7 @@ export function loadConn() {
 }
 export const saveConn = (c) => localStorage.setItem(KEY, JSON.stringify(c));
 export const hasSession = () => !!loadConn().token;
-export const clearSession = () => saveConn({ ...loadConn(), token: '' });
+export const clearSession = () => saveConn({ ...loadConn(), token: '', userId: '' });
 
 // 401 tratado num lugar só: limpa a sessão e avisa quem se registrou (App.svelte).
 let onUnauthorized = null;
@@ -49,11 +50,12 @@ async function call(method, path, body) {
 }
 
 export const api = {
-  health: () => call('GET', '/api/health'),
   authConfig: () => call('GET', '/api/auth/config'),
   loginGoogle: (id_token) => call('POST', '/api/auth/google', { id_token, device: navigator.userAgent.slice(0, 80) }),
   me: () => call('GET', '/api/auth/me'),
   push: (ops) => call('POST', '/api/sync', { ops }),
   pull: (since) => call('GET', `/api/sync?since=${since}`),
   logout: () => call('POST', '/api/auth/logout', {}),
+  exportData: () => call('GET', '/api/export?format=json'),
+  deleteAccount: (confirm_email) => call('DELETE', '/api/account', { confirm_email }),
 };

@@ -2,8 +2,10 @@
 // Sem rede não é erro: a fila fica guardada e tentamos de novo quando a rede voltar.
 import { api, ApiError } from './api.js';
 import * as db from './db.js';
+import * as session from './session.js';
 
 const BATCH = 200; // o servidor aceita até 500 por lote
+const MAX_BYTES = 600_000; // e 1 MB por requisição: ficamos bem abaixo
 
 const listeners = new Set();
 export const onStatus = (fn) => (listeners.add(fn), () => listeners.delete(fn));
@@ -22,34 +24,59 @@ export async function status(extra = {}) {
   };
 }
 
-const changed = (g) => {
-  if (g !== db.generation()) throw new Error('usuário mudou durante a sincronização');
+const changed = db.checkGen;
+
+// Primeiros ops da fila até BATCH ou ~MAX_BYTES (sempre pelo menos 1).
+const take = (ops) => {
+  let bytes = 0;
+  const out = [];
+  for (const op of ops) {
+    bytes += JSON.stringify(op).length;
+    if (out.length && bytes > MAX_BYTES) break;
+    out.push(op);
+  }
+  return out;
 };
+
+// Envia o lote; se o servidor responder 400/413, divide ao meio e tenta de novo (até 1 op).
+// Uma op que sozinha continua dando 400/413 vira "rejected" local, para não travar a fila.
+async function send(ops, g) {
+  try {
+    const { results } = await api.push(ops.map(({ seq, ...op }) => op));
+    changed(g);
+    return results;
+  } catch (e) {
+    if (!(e instanceof ApiError) || (e.status !== 400 && e.status !== 413)) throw e;
+    if (ops.length === 1) return [{ op_id: ops[0].op_id, status: 'rejected', error: e.message }];
+    const mid = ops.length >> 1;
+    const first = await send(ops.slice(0, mid), g);
+    return [...first, ...(await send(ops.slice(mid), g))];
+  }
+}
+
+const labelOf = (op) => op.data?.name ?? op.data?.description ?? '';
 
 async function push(g) {
   for (;;) {
-    const ops = await db.nextOps(BATCH);
+    const ops = take(await db.nextOps(BATCH));
     if (!ops.length) return;
-    const { results } = await api.push(ops.map(({ seq, ...op }) => op));
-    changed(g);
+    const results = await send(ops, g);
     const byId = new Map(results.map((r) => [r.op_id, r]));
-    const done = [];
+    const done = [], drop = [], rejected = [];
     let reset = false;
     for (const op of ops) {
       const r = byId.get(op.op_id);
       if (!r) continue; // sem resposta: continua na fila
       if (r.status !== 'ok' && r.status !== 'dup') reset = true;
-      if (r.status === 'conflict') await db.dropLocal(op.kind, op.id); // outro aparelho já gerou este item
-      if (r.status === 'rejected') {
-        const list = await db.getMeta('rejected', []);
-        await db.setMeta('rejected', [...list, { kind: op.kind, id: op.id, action: op.action, error: r.error }]);
-      }
+      if (r.status === 'conflict') drop.push([op.kind, op.id]); // outro aparelho já gerou este item
+      // gone = excluído em outro aparelho (o pull traz o tombstone): também fica visível para o usuário
+      if (r.status === 'gone') rejected.push({ kind: op.kind, id: op.id, action: op.action, label: labelOf(op), error: 'foi excluído em outro aparelho' });
+      if (r.status === 'rejected') rejected.push({ kind: op.kind, id: op.id, action: op.action, label: labelOf(op), error: r.error });
       done.push(op.seq);
     }
     if (!done.length) throw new Error('servidor não respondeu às operações');
-    await db.ack(done);
     // o pull pulou itens que estavam na fila: refaz a leitura completa (idempotente, dados pequenos)
-    if (reset) await db.setMeta('cursor', 0);
+    await db.settle({ ack: done, rejected, drop, resetCursor: reset }, g);
   }
 }
 
@@ -67,7 +94,7 @@ async function pull(g) {
       restored = true;
       continue;
     }
-    await db.applyChanges(changes, cursor);
+    await db.applyChanges(changes, cursor, g);
     since = cursor;
     if (!more) return restored;
   }
@@ -80,6 +107,8 @@ export function sync() {
   running ??= (async () => {
     let result = { ok: true };
     try {
+      // Conta bloqueada ou token de outro usuário: nada é enviado nem baixado.
+      if (!(await session.canSync())) throw new Error('conta não confirmada neste aparelho');
       const g = db.generation();
       emit(await status({ syncing: true }));
       await push(g);

@@ -4,7 +4,7 @@
 import * as db from './db.js';
 import * as sync from './sync.js';
 import { uuidv7 } from './uuid.js';
-import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays } from './finance.js';
+import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO } from './finance.js';
 
 export const app = $state({
   ready: false,
@@ -13,6 +13,7 @@ export const app = $state({
   user: null,
   accounts: [], categories: [], recurrences: [], transactions: [],
   rejected: [],
+  rejectedIds: new Set(), // ids de upserts recusados: ficam fora dos saldos e marcados na lista até descartar/corrigir
   status: { pending: 0, rejected: 0, online: true, syncing: false, error: '' },
 });
 
@@ -29,7 +30,8 @@ async function load() {
   const [accounts, categories, recurrences, transactions, rejected] = await Promise.all([
     db.list('account'), db.list('category'), db.list('recurrence'), db.list('transaction'), db.getMeta('rejected', []),
   ]);
-  Object.assign(app, { accounts, categories, recurrences, transactions, rejected });
+  const rejectedIds = new Set(rejected.filter((r) => r.action === 'upsert').map((r) => r.id));
+  Object.assign(app, { accounts, categories, recurrences, transactions, rejected, rejectedIds });
 }
 
 // Recarrega o estado sem concorrência: uma execução em andamento + no máximo uma pendente.
@@ -59,7 +61,7 @@ export async function idle() {
 
 // Logout: nada do usuário anterior pode sobrar na memória.
 export function clearApp() {
-  Object.assign(app, { ready: false, synced: false, user: null, accounts: [], categories: [], recurrences: [], transactions: [], rejected: [] });
+  Object.assign(app, { ready: false, synced: false, user: null, accounts: [], categories: [], recurrences: [], transactions: [], rejected: [], rejectedIds: new Set() });
 }
 
 // Cria as ocorrências que faltam (janela de 12 meses que rola a cada abertura/sincronização).
@@ -109,6 +111,7 @@ function listen() {
 // ---------- contas ----------
 
 export const saveAccount = async (id, f) => {
+  if (!validCents(f.initial_balance_cents)) throw new Error('Saldo inicial inválido ou fora do limite.');
   await sync.save('account', id ?? uuidv7(), {
     name: f.name.trim(), type: f.type, initial_balance_cents: f.initial_balance_cents, archived: !!f.archived,
   });
@@ -143,9 +146,17 @@ export async function deleteCategory(id) {
 
 // ---------- lançamentos ----------
 
+// Mesmos limites do servidor: evita gravar localmente algo que ele vai recusar (e que ficaria "fantasma").
+const checkTx = (cents, date) => {
+  if (!validCents(cents) || cents <= 0) throw new Error('Valor inválido ou fora do limite.');
+  if (!isValidISO(date)) throw new Error('Data inválida (use uma data entre 1900 e 2200).');
+};
+
 export async function saveTx(id, fields) {
   const old = id ? app.transactions.find((t) => t.id === id) : null;
-  await sync.save('transaction', id ?? uuidv7(), txDoc({ ...(old ? doc(old) : {}), ...fields }));
+  const d = txDoc({ ...(old ? doc(old) : {}), ...fields });
+  checkTx(d.amount_cents, d.date);
+  await sync.save('transaction', id ?? uuidv7(), d);
   await reload();
 }
 
@@ -155,6 +166,7 @@ export async function setPaid(t, paid) {
 }
 
 export async function createInstallments(base, n) {
+  checkTx(base.amount_cents, base.date);
   const group = uuidv7();
   await sync.saveMany(splitInstallments(base.amount_cents, n, base.date).map((p) => put('transaction', uuidv7(), txDoc({
     ...base, amount_cents: p.amount_cents, date: p.date, status: 'pending', paid_at: null,
@@ -177,6 +189,7 @@ async function addRecurrence(rec, extra = [], id = uuidv7()) {
 }
 
 export const createRecurrence = (f) => serial(async () => {
+  checkTx(f.amount_cents, f.start_date);
   await addRecurrence({ kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
     category_id: f.category_id ?? null, frequency: f.frequency, interval_n: f.interval_n ?? 1, start_date: f.start_date,
     end_date: null, active: true, generated_until: null });
@@ -240,11 +253,7 @@ export async function deleteTx(tx) {
 // ---------- sincronização ----------
 
 export async function dismissRejected(i) {
-  const list = await db.getMeta('rejected', []);
-  const [r] = list.splice(i, 1);
-  await db.setMeta('rejected', list);
-  if (r?.action === 'upsert') await db.dropLocal(r.kind, r.id); // a cópia local nunca chegou ao servidor
-  await db.setMeta('cursor', 0); // o próximo pull reconcilia com o que o servidor tem
+  await db.dismissRejectedAt(i);
   await reload();
   sync.sync().catch(() => {});
 }

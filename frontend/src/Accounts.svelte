@@ -12,7 +12,7 @@
   let error = $state('');
   let showArchived = $state(false);
 
-  const bal = $derived(balances(app.accounts, app.transactions, monthEnd(monthOf(today))));
+  const bal = $derived(balances(app.accounts, app.transactions, monthEnd(monthOf(today)), app.rejectedIds));
   const by = $derived(Object.fromEntries(bal.all.map((a) => [a.id, a])));
   const list = $derived(app.accounts.filter((a) => showArchived || !a.archived).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
   const archivedCount = $derived(app.accounts.filter((a) => a.archived).length);
@@ -27,7 +27,7 @@
   async function submit(e) {
     e.preventDefault();
     const cents = parseMoney(form.balance);
-    if (cents === null) { error = 'Saldo inválido. Exemplo: 1.250,00'; return; }
+    if (cents === null) { error = 'Saldo inválido ou fora do limite. Exemplo: 1.250,00'; return; }
     if (!form.name.trim()) { error = 'Informe o nome da conta.'; return; }
     busy = true;
     try {
@@ -53,7 +53,7 @@
   <ul class="rows">
     {#each list as a (a.id)}
       <li class:done={a.archived}>
-        <div class="grow"><strong>{a.name}{#if a.archived} <span class="badge">arquivada</span>{/if}</strong>
+        <div class="grow"><strong>{a.name}{#if a.archived} <span class="badge">arquivada</span>{/if}{#if app.rejectedIds.has(a.id)} <span class="badge warn">não enviada</span>{/if}</strong>
           <span class="muted small">{TYPES[a.type]}{#if by[a.id]} · previsto no mês <span class="num">{money(by[a.id].projected_cents)}</span>{/if}</span></div>
         <span class="num">{money(by[a.id]?.current_cents ?? 0)}</span>
         <button class="btn small ghost" onclick={() => open(a)} aria-label="Editar {a.name}">✎</button>

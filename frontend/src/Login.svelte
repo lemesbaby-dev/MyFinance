@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { api, loadConn, saveConn } from './lib/api.js';
+  import { api } from './lib/api.js';
+  import { accept } from './lib/session.js';
   let { onlogin } = $props();
   let error = $state('');
   let btn;
@@ -20,8 +21,8 @@
     error = '';
     try {
       const { token, user } = await api.loginGoogle(credential);
-      saveConn({ ...loadConn(), token });
-      onlogin(user);
+      // O token só é gravado depois de conferir a cópia local deste aparelho (session.js).
+      onlogin(user, await accept(token, user));
     } catch (e) {
       error = e.message;
     }

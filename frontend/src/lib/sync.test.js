@@ -204,3 +204,103 @@ test('servidor restaurado de backup (cursor > rev): reenfileira tudo e refaz o p
   assert.equal((await db.list('account')).length, 1);
   assert.equal(await db.getMeta('cursor'), 1);
 });
+
+// ---------- recusados, gone, lotes que dão 400/413, db ----------
+
+const failWith = (status, when) => {
+  const real = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    if (init.method === 'POST') {
+      const ops = JSON.parse(init.body).ops;
+      sent.push(ops.length);
+      if (when(ops)) return { ok: false, status, json: async () => ({ error: status === 413 ? 'corpo grande demais' : 'JSON inválido' }) };
+    }
+    return real(url, init);
+  };
+  return sent;
+};
+
+test('gone entra na lista de recusados com mensagem clara (e some do local pelo tombstone)', async () => {
+  await save('transaction', 'tx1', { description: 'Mercado' });
+  srv.forced = { tx1: 'gone' };
+  srv.rows.set('transaction/tx1', { kind: 'transaction', id: 'tx1', rev: ++srv.rev, deleted: true, data: {} });
+  await sync();
+  const rej = await db.getMeta('rejected');
+  assert.equal(rej.length, 1);
+  assert.deepEqual([rej[0].id, rej[0].error, rej[0].label], ['tx1', 'foi excluído em outro aparelho', 'Mercado']);
+  assert.equal(await db.pending(), 0);
+  assert.equal(await db.get('transaction', 'tx1'), null);
+});
+
+test('corrigir (gravar de novo) um recusado tira da lista; descartar é atômico e reconcilia', async () => {
+  await save('transaction', 'ruim', { description: 'x' });
+  srv.forced = { ruim: 'rejected' };
+  await sync();
+  assert.equal((await db.getMeta('rejected')).length, 1);
+  await save('transaction', 'ruim', { description: 'corrigido' });
+  assert.equal((await db.getMeta('rejected')).length, 0, 'regravar = corrigir');
+  srv.forced = { ruim: 'rejected' };
+  await sync();
+  assert.equal((await db.getMeta('rejected')).length, 1);
+  assert.equal((await db.dismissRejectedAt(0)).id, 'ruim');
+  assert.equal((await db.getMeta('rejected')).length, 0);
+  assert.equal(await db.get('transaction', 'ruim'), null, 'cópia que nunca chegou ao servidor é descartada');
+  assert.equal(await db.getMeta('cursor'), 0);
+});
+
+test('400 no lote: divide ao meio até achar a op ruim, que vai para recusados sem travar a fila', async () => {
+  for (const id of ['a', 'b', 'poison', 'd', 'e']) await save('transaction', id, { description: id });
+  const sent = failWith(400, (ops) => ops.some((o) => o.id === 'poison'));
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(await db.pending(), 0, 'fila esvaziou');
+  assert.deepEqual([...srv.rows.keys()].sort(), ['transaction/a', 'transaction/b', 'transaction/d', 'transaction/e']);
+  const rej = await db.getMeta('rejected');
+  assert.deepEqual(rej.map((r) => [r.id, r.error]), [['poison', 'JSON inválido']]);
+  assert.ok(sent.includes(1) && sent[0] === 5, `tentou o lote inteiro e depois pedaços: ${sent}`);
+});
+
+test('413: lote grande demais é dividido e tudo chega', async () => {
+  for (let i = 0; i < 6; i++) await save('transaction', 't' + i, { description: 'x' });
+  failWith(413, (ops) => ops.length > 2);
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(srv.rows.size, 6);
+  assert.equal((await db.getMeta('rejected', [])).length, 0);
+});
+
+test('lote respeita o limite de bytes (~600 KB)', async () => {
+  const big = 'x'.repeat(250_000);
+  for (let i = 0; i < 5; i++) await save('transaction', 'g' + i, { description: big });
+  const sent = failWith(200, () => false);
+  await sync();
+  assert.ok(sent.every((n) => n <= 2), `lotes: ${sent}`);
+  assert.equal(srv.rows.size, 5);
+});
+
+test('openDb: promise rejeitada não fica guardada; reabre depois', async () => {
+  const real = globalThis.indexedDB;
+  await db.closeDb();
+  globalThis.indexedDB = { open() { throw new Error('storage indisponível'); } };
+  await assert.rejects(db.list('account'), /storage indisponível/);
+  globalThis.indexedDB = real;
+  assert.deepEqual(await db.list('account'), [], 'a segunda tentativa funciona');
+});
+
+test('onversionchange fecha a conexão para a outra aba poder atualizar', async () => {
+  await db.list('account'); // abre
+  const upgraded = await new Promise((ok, fail) => {
+    const r = indexedDB.open('financas', 2);
+    r.onsuccess = () => (r.result.close(), ok(true));
+    r.onerror = () => fail(r.error);
+    r.onblocked = () => fail(new Error('nossa conexão não fechou'));
+  });
+  assert.equal(upgraded, true);
+});
+
+test('applyChanges confere a geração dentro da transação', async () => {
+  const g = db.generation();
+  await db.wipe(); // sobe a geração: um pull em andamento não pode gravar nada depois
+  await assert.rejects(db.applyChanges([{ kind: 'account', id: 'x', deleted: false, data: acc }], 5, g), /usuário mudou/);
+  assert.equal((await db.list('account')).length, 0);
+  assert.equal(await db.getMeta('cursor'), null);
+});

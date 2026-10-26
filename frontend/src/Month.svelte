@@ -18,10 +18,10 @@
   let error = $state('');
 
   const until = $derived(monthEnd(month));
-  const bal = $derived(balances(app.accounts, app.transactions, until));
-  const nowBal = $derived(balances(app.accounts, app.transactions, today));
+  const bal = $derived(balances(app.accounts, app.transactions, until, app.rejectedIds));
+  const nowBal = $derived(balances(app.accounts, app.transactions, today, app.rejectedIds));
   const archived = $derived(new Set(app.accounts.filter((a) => a.archived).map((a) => a.id)));
-  const view = $derived(monthView(app.transactions, month, filter, today, archived));
+  const view = $derived(monthView(app.transactions, month, filter, today, archived, app.rejectedIds));
   const maxSpend = $derived(Math.max(1, ...view.spending.map((s) => s.cents)));
   const label = $derived(`${MONTHS[+month.slice(5, 7) - 1]} de ${month.slice(0, 4)}`);
   const hasAccounts = $derived(app.accounts.some((a) => !a.archived));
@@ -54,13 +54,13 @@
     <div class="grow">
       <strong>{t.description}{#if t.installment_total} <span class="muted">{t.installment_no}/{t.installment_total}</span>{/if}</strong>
       <span class="muted small">
-        {shortDate(t.date)}{#if late} · atrasado{/if}{#if t.recurrence_id} · repete{/if}
+        {shortDate(t.date)}{#if late} · atrasado{/if}{#if app.rejectedIds.has(t.id)} · <span class="badge warn">não enviado</span>{/if}{#if t.recurrence_id} · repete{/if}
         · {accName(t.account_id)}{#if t.kind === 'transfer'} → {accName(t.transfer_account_id)}{/if}{#if t.category_id} · {catName(t.category_id)}{/if}
       </span>
     </div>
     <span class="num {t.kind === 'income' ? 'in' : t.kind === 'expense' ? 'out' : ''}">{sign(t)}{money(t.amount_cents)}</span>
     <div class="acts">
-      <button class="btn small ghost" onclick={() => toggle(t)}>{t.status === 'paid' ? 'Desfazer' : t.kind === 'income' ? 'Recebi' : t.kind === 'transfer' ? 'Transferi' : 'Paguei'}</button>
+      <button class="btn small ghost" onclick={() => toggle(t)} aria-label="{t.status === 'paid' ? 'Desfazer' : t.kind === 'income' ? 'Recebi' : t.kind === 'transfer' ? 'Transferi' : 'Paguei'}: {t.description}">{t.status === 'paid' ? 'Desfazer' : t.kind === 'income' ? 'Recebi' : t.kind === 'transfer' ? 'Transferi' : 'Paguei'}</button>
       <button class="btn small ghost" onclick={() => (form = { tx: t })} aria-label="Editar {t.description}">✎</button>
       <button class="btn small ghost" onclick={() => removeOne(t)} aria-label="Excluir {t.description}">✕</button>
     </div>
