@@ -1,7 +1,28 @@
 PRAGMA foreign_keys = ON;
 
+-- Identidade vem do Google (`sub` é estável; o e-mail pode mudar).
+CREATE TABLE IF NOT EXISTS users (
+  id         TEXT PRIMARY KEY,
+  google_sub TEXT NOT NULL UNIQUE,
+  email      TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  picture    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Sessão opaca: guardamos só o hash do token (vazamento do banco não vaza sessões).
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
 CREATE TABLE IF NOT EXISTS accounts (
   id                    INTEGER PRIMARY KEY,
+  user_id               TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name                  TEXT    NOT NULL,
   type                  TEXT    NOT NULL DEFAULT 'checking'
                         CHECK (type IN ('checking','cash','savings','investment')),
@@ -9,21 +30,24 @@ CREATE TABLE IF NOT EXISTS accounts (
   archived              INTEGER NOT NULL DEFAULT 0,
   created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_acc_user ON accounts(user_id);
 
 CREATE TABLE IF NOT EXISTS categories (
   id        INTEGER PRIMARY KEY,
+  user_id   TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name      TEXT    NOT NULL,
   kind      TEXT    NOT NULL CHECK (kind IN ('income','expense')),
   parent_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
   color     TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_unique
-  ON categories(kind, name, COALESCE(parent_id, 0));
+  ON categories(user_id, kind, name, COALESCE(parent_id, 0));
 
 -- Regra de recorrência. As ocorrências viram linhas em `transactions`
 -- (materializadas até generated_until) e continuam editáveis uma a uma.
 CREATE TABLE IF NOT EXISTS recurrences (
   id              INTEGER PRIMARY KEY,
+  user_id         TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind            TEXT    NOT NULL CHECK (kind IN ('income','expense')),
   description     TEXT    NOT NULL,
   amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
@@ -39,6 +63,7 @@ CREATE TABLE IF NOT EXISTS recurrences (
 
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
+  user_id             TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind                TEXT    NOT NULL CHECK (kind IN ('income','expense','transfer')),
   description         TEXT    NOT NULL,
   amount_cents        INTEGER NOT NULL CHECK (amount_cents > 0),  -- sempre positivo; o sinal vem de `kind`
@@ -59,10 +84,10 @@ CREATE TABLE IF NOT EXISTS transactions (
   CHECK ((status = 'paid') = (paid_at IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS idx_tx_date     ON transactions(date);
-CREATE INDEX IF NOT EXISTS idx_tx_status   ON transactions(status, date);
-CREATE INDEX IF NOT EXISTS idx_tx_account  ON transactions(account_id);
-CREATE INDEX IF NOT EXISTS idx_tx_category ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_tx_user_date   ON transactions(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_tx_user_status ON transactions(user_id, status, date);
+CREATE INDEX IF NOT EXISTS idx_tx_account     ON transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_tx_category    ON transactions(category_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_recurrence_date
   ON transactions(recurrence_id, date) WHERE recurrence_id IS NOT NULL;
 

@@ -1,13 +1,14 @@
 <script>
   import { onMount } from 'svelte';
-  import { api, ApiError, needsSetup, isNative } from './lib/api.js';
+  import { api, ApiError, hasSession, clearSession } from './lib/api.js';
   import { money, shortDate, endOfMonthISO, isoToday } from './lib/format.js';
-  import Setup from './Setup.svelte';
+  import Login from './Login.svelte';
   import TxForm from './TxForm.svelte';
   import FirstRun from './FirstRun.svelte';
 
   let ready = $state(false);
-  let needConn = $state(needsSetup());
+  let needLogin = $state(!hasSession());
+  let user = $state(null);
   let error = $state('');
   let summary = $state(null);
   let pending = $state([]);
@@ -33,7 +34,7 @@
         api.categories(),
       ]);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) needConn = true; // token ausente/errado
+      if (e instanceof ApiError && e.status === 401) { clearSession(); needLogin = true; } // sessão vencida/revogada
       error = e.message;
     } finally {
       ready = true;
@@ -48,11 +49,24 @@
     try { await api.remove(t.id); await load(); } catch (e) { error = e.message; }
   }
 
-  onMount(() => { if (!needConn) load(); else ready = true; });
+  async function logout() {
+    try { await api.logout(); } catch { /* sem rede: encerra só localmente */ }
+    clearSession();
+    summary = null; pending = []; categories = []; user = null;
+    needLogin = true;
+  }
+
+  function loggedIn(u) { user = u; needLogin = false; ready = false; load(); }
+
+  onMount(async () => {
+    if (needLogin) { ready = true; return; }
+    api.me().then((u) => (user = u)).catch(() => {});
+    load();
+  });
 </script>
 
-{#if needConn}
-  <Setup onsaved={() => { needConn = false; load(); }} />
+{#if needLogin}
+  <Login onlogin={loggedIn} />
 {:else if !ready}
   <p class="muted pad">Carregando…</p>
 {:else if summary && accounts.length === 0}
@@ -135,9 +149,9 @@
       </ul>
     </section>
 
-    {#if isNative()}
-      <p class="pad"><button class="btn small ghost" onclick={() => (needConn = true)}>Trocar servidor</button></p>
-    {/if}
+    <p class="pad muted small">
+      {#if user}{user.email} · {/if}<button class="btn small ghost" onclick={logout}>Sair</button>
+    </p>
 
     <button class="fab btn" onclick={() => (showForm = true)}>Lançar</button>
   </main>

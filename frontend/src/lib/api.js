@@ -1,8 +1,6 @@
 // Cliente da API. No navegador servido pelo Go, a base é a mesma origem ('').
-// No APK (Capacitor) é preciso informar a URL do servidor na primeira abertura.
+// `token` é a sessão emitida pelo servidor após o login com Google.
 const KEY = 'financas.conn';
-
-export const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 
 export function loadConn() {
   try {
@@ -12,7 +10,8 @@ export function loadConn() {
   }
 }
 export const saveConn = (c) => localStorage.setItem(KEY, JSON.stringify(c));
-export const needsSetup = () => isNative() && !loadConn().url;
+export const hasSession = () => !!loadConn().token;
+export const clearSession = () => saveConn({ ...loadConn(), token: '' });
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -43,6 +42,10 @@ async function call(method, path, body) {
 
 export const api = {
   health: () => call('GET', '/api/health'),
+  authConfig: () => call('GET', '/api/auth/config'),
+  loginGoogle: (id_token) => call('POST', '/api/auth/google', { id_token, device: navigator.userAgent.slice(0, 80) }),
+  me: () => call('GET', '/api/auth/me'),
+  logout: () => call('POST', '/api/auth/logout', {}),
   summary: (until) => call('GET', '/api/summary' + (until ? `?until=${until}` : '')),
   categories: () => call('GET', '/api/categories'),
   transactions: (q = {}) => call('GET', '/api/transactions?' + new URLSearchParams(q)),

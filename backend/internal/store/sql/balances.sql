@@ -1,4 +1,4 @@
--- ?1 = data limite do saldo previsto (YYYY-MM-DD).
+-- ?2 = user_id. ?1 = data limite do saldo previsto (YYYY-MM-DD).
 -- atual    = saldo inicial + tudo que já foi pago
 -- previsto = atual + pendentes com vencimento <= ?1 (inclui atrasados)
 SELECT a.id, a.name, a.type,
@@ -10,6 +10,6 @@ SELECT a.id, a.name, a.type,
          AS projected_cents
   FROM accounts a
   LEFT JOIN v_movements m ON m.account_id = a.id
- WHERE a.archived = 0
+ WHERE a.archived = 0 AND a.user_id = ?2
  GROUP BY a.id
  ORDER BY a.name;

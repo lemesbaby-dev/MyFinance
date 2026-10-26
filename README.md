@@ -36,7 +36,7 @@ primeiras (R$ 100,00 em 3x → 33,34 / 33,33 / 33,33).
 cd backend
 go mod tidy                 # baixa modernc.org/sqlite e gera go.sum
 go test ./...
-FINANCAS_TOKEN=troque-isto go run ./cmd/server     # http://localhost:8080
+GOOGLE_CLIENT_ID=<seu-client-id>.apps.googleusercontent.com go run ./cmd/server   # http://localhost:8080
 
 # 2) frontend (outro terminal)
 cd frontend
@@ -44,8 +44,9 @@ npm install
 npm run dev                 # http://localhost:5173  (proxy /api -> :8080)
 ```
 
-Se o servidor tiver `FINANCAS_TOKEN`, o app mostra a tela de conexão ao receber 401: no navegador
-deixe o endereço vazio e informe só o token; no APK informe também a URL do servidor.
+**Login:** Google Sign-In. Crie um *OAuth Client ID* (tipo Web) no Google Cloud Console e, em
+"Origens JavaScript autorizadas", adicione `http://localhost:5173` (dev) e o domínio de produção.
+Cadastro aberto: qualquer conta Google entra; `MAX_USERS` (padrão 200) limita o total.
 
 ## Produção (VM)
 
@@ -54,15 +55,15 @@ cd frontend && npm ci && npm run build
 cd ../backend
 CGO_ENABLED=0 go build -o financas ./cmd/server        # binário único, sem dependências
 
-FINANCAS_TOKEN='um-token-longo-e-aleatorio' \
+GOOGLE_CLIENT_ID='xxx.apps.googleusercontent.com' MAX_USERS=200 \
 DB_PATH=/var/lib/financas/financas.db \
 STATIC_DIR=/opt/financas/dist \
 ADDR=127.0.0.1:8080 ./financas
 ```
 
-- Coloque atrás de um proxy com **HTTPS** (Caddy ou Nginx): o token trafega no header.
+- Coloque atrás de um proxy com **HTTPS** (Caddy ou Nginx): a sessão trafega no header e o login Google exige HTTPS.
 - **Backup**: copie o arquivo `.db` (use `sqlite3 financas.db ".backup out.db"` com o app rodando).
-- Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `FINANCAS_TOKEN`, `ALLOWED_ORIGINS` (CORS, para o APK).
+- Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS).
 
 ## APK (Android)
 
@@ -89,7 +90,7 @@ Na primeira abertura do app, informe a URL HTTPS do servidor e o token. O APK us
 | POST | `/api/recurrences` | cria a regra e materializa 12 meses |
 | POST | `/api/accounts` · GET/POST `/api/categories` | |
 
-Autenticação: `Authorization: Bearer <FINANCAS_TOKEN>`.
+Autenticação: `POST /api/auth/google` troca o ID token do Google por uma sessão; as demais rotas exigem `Authorization: Bearer <sessão>`. Todos os dados são isolados por usuário.
 
 ## Próximos passos (do que os concorrentes têm)
 

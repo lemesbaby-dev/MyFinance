@@ -2,23 +2,32 @@
 package api
 
 import (
-	"crypto/subtle"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"financas/internal/auth"
 	"financas/internal/finance"
 	"financas/internal/store"
 )
 
 type Server struct {
-	Store   *store.Store
-	Token   string   // token único (uso pessoal); vazio desativa a autenticação (só dev!)
-	Origins []string // origens permitidas via CORS (ex.: o app Capacitor)
+	Store    *store.Store
+	Verifier auth.Verifier // valida o ID token do Google
+	ClientID string        // Client ID do Google, exposto ao front em /api/auth/config
+	MaxUsers int           // trava do cadastro aberto; <=0 = sem limite
+	// SessionTTL: validade da sessão, renovada com o uso. Padrão 90 dias.
+	SessionTTL time.Duration
+	Origins    []string // origens permitidas via CORS (ex.: o app Capacitor)
+
+	limiter limiter
 	// Horizon: até quando materializar recorrências, em meses a partir de hoje.
 	HorizonMonths int
 }
@@ -26,6 +35,15 @@ type Server struct {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+
+	mux.HandleFunc("GET /api/auth/config", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, map[string]string{"google_client_id": s.ClientID})
+	})
+	mux.HandleFunc("POST /api/auth/google", s.loginGoogle)
+	mux.HandleFunc("POST /api/auth/logout", s.logout)
+	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, userFrom(r))
+	})
 
 	mux.HandleFunc("GET /api/summary", s.summary)
 	mux.HandleFunc("POST /api/accounts", s.createAccount)
@@ -65,22 +83,138 @@ func (s *Server) cors(next http.Handler) http.Handler {
 	})
 }
 
+type ctxKey struct{}
+
+// userFrom devolve o usuário autenticado (o middleware garante que existe nas rotas protegidas).
+func userFrom(r *http.Request) store.User {
+	u, _ := r.Context().Value(ctxKey{}).(store.User)
+	return u
+}
+
+func (s *Server) ttl() time.Duration {
+	if s.SessionTTL > 0 {
+		return s.SessionTTL
+	}
+	return 90 * 24 * time.Hour
+}
+
+func bearer(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return ""
+	}
+	return strings.TrimPrefix(h, "Bearer ")
+}
+
+// public: rotas que não exigem sessão.
+var public = map[string]bool{"/api/health": true, "/api/auth/config": true, "/api/auth/google": true}
+
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.Token == "" || !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/health" {
+		if !strings.HasPrefix(r.URL.Path, "/api/") || public[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
 		}
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.Token)) != 1 {
+		tok := bearer(r)
+		if tok == "" {
 			writeErr(w, 401, "não autorizado")
 			return
 		}
-		next.ServeHTTP(w, r)
+		u, err := s.Store.SessionUser(tok, s.ttl())
+		if errors.Is(err, store.ErrNoSession) {
+			writeErr(w, 401, "sessão expirada")
+			return
+		}
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, u)))
 	})
 }
 
+// limiter: no máximo N tentativas por IP por minuto (em memória; some ao reiniciar).
+// ponytail: atrás do Caddy usa o último X-Forwarded-For; exposto direto na internet daria para
+// forjar o cabeçalho — sempre rode atrás do proxy.
+type limiter struct {
+	mu   sync.Mutex
+	hits map[string][]time.Time
+}
+
+func (l *limiter) allow(ip string, n int) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.hits == nil {
+		l.hits = map[string][]time.Time{}
+	}
+	cut := time.Now().Add(-time.Minute)
+	kept := l.hits[ip][:0]
+	for _, t := range l.hits[ip] {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= n {
+		l.hits[ip] = kept
+		return false
+	}
+	l.hits[ip] = append(kept, time.Now())
+	return true
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[len(parts)-1])
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return host
+}
+
 // ---------- handlers ----------
+
+// POST /api/auth/google {id_token, device} -> {token, user}
+func (s *Server) loginGoogle(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.allow(clientIP(r), 10) {
+		writeErr(w, 429, "muitas tentativas; aguarde um minuto")
+		return
+	}
+	var in struct {
+		IDToken string `json:"id_token"`
+		Device  string `json:"device"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	c, err := s.Verifier.Verify(r.Context(), in.IDToken)
+	if err != nil {
+		writeErr(w, 401, err.Error())
+		return
+	}
+	u, err := s.Store.UpsertGoogleUser(c.Sub, c.Email, c.Name, c.Picture, s.MaxUsers)
+	if errors.Is(err, store.ErrSignupsClosed) {
+		writeErr(w, 403, err.Error())
+		return
+	}
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	dev := in.Device
+	if len(dev) > 80 {
+		dev = dev[:80]
+	}
+	tok, err := s.Store.NewSession(u.ID, dev, s.ttl())
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"token": tok, "user": u})
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	respond(w, map[string]bool{"ok": true}, s.Store.RevokeSession(bearer(r)))
+}
 
 // GET /api/summary?until=YYYY-MM-DD  (padrão: último dia do mês atual)
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +229,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	}
 	monthStart := finance.FormatDate(time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC))
 
-	balances, err := s.Store.Balances(until)
+	balances, err := s.Store.Balances(userFrom(r).ID, until)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -105,7 +239,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		cur += b.CurrentCents
 		proj += b.ProjectedCents
 	}
-	spending, err := s.Store.SpendingByCategory(monthStart, finance.FormatDate(endOfMonth(now)))
+	spending, err := s.Store.SpendingByCategory(userFrom(r).ID, monthStart, finance.FormatDate(endOfMonth(now)))
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -128,12 +262,12 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "informe o nome da conta")
 		return
 	}
-	id, err := s.Store.CreateAccount(a)
+	id, err := s.Store.CreateAccount(userFrom(r).ID, a)
 	respondCreated(w, id, err)
 }
 
-func (s *Server) listCategories(w http.ResponseWriter, _ *http.Request) {
-	cs, err := s.Store.Categories()
+func (s *Server) listCategories(w http.ResponseWriter, r *http.Request) {
+	cs, err := s.Store.Categories(userFrom(r).ID)
 	respond(w, cs, err)
 }
 
@@ -146,13 +280,13 @@ func (s *Server) createCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "informe nome e tipo (income ou expense)")
 		return
 	}
-	id, err := s.Store.CreateCategory(c)
+	id, err := s.Store.CreateCategory(userFrom(r).ID, c)
 	respondCreated(w, id, err)
 }
 
 func (s *Server) listTransactions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	ts, err := s.Store.ListTransactions(q.Get("from"), q.Get("to"), q.Get("status"))
+	ts, err := s.Store.ListTransactions(userFrom(r).ID, q.Get("from"), q.Get("to"), q.Get("status"))
 	respond(w, ts, err)
 }
 
@@ -177,15 +311,15 @@ func (s *Server) createTransaction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		first, _ := finance.ParseDate(t.Date)
-		ids, err := s.Store.CreateInstallments(t, in.Installments, first)
+		ids, err := s.Store.CreateInstallments(userFrom(r).ID, t, in.Installments, first)
 		if err != nil {
-			writeErr(w, 500, err.Error())
+			writeStoreErr(w, err)
 			return
 		}
 		writeJSON(w, 201, map[string]any{"ids": ids})
 		return
 	}
-	id, err := s.Store.CreateTransaction(t)
+	id, err := s.Store.CreateTransaction(userFrom(r).ID, t)
 	respondCreated(w, id, err)
 }
 
@@ -204,7 +338,7 @@ func (s *Server) pay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	err := s.Store.MarkPaid(id, body.PaidAt)
+	err := s.Store.MarkPaid(userFrom(r).ID, id, body.PaidAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, 404, "lançamento não encontrado ou já efetivado")
 		return
@@ -217,7 +351,7 @@ func (s *Server) unpay(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	respond(w, map[string]bool{"ok": true}, s.Store.MarkPending(id))
+	respond(w, map[string]bool{"ok": true}, s.Store.MarkPending(userFrom(r).ID, id))
 }
 
 func (s *Server) deleteTransaction(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +359,7 @@ func (s *Server) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	respond(w, map[string]bool{"ok": true}, s.Store.DeleteTransaction(id))
+	respond(w, map[string]bool{"ok": true}, s.Store.DeleteTransaction(userFrom(r).ID, id))
 }
 
 func (s *Server) createRecurrence(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +396,7 @@ func (s *Server) createRecurrence(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	id, err := s.Store.CreateRecurrence(rec, s.horizon())
+	id, err := s.Store.CreateRecurrence(userFrom(r).ID, rec, s.horizon())
 	respondCreated(w, id, err)
 }
 
@@ -336,7 +470,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func respond(w http.ResponseWriter, v any, err error) {
 	if err != nil {
-		writeErr(w, 500, err.Error())
+		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, 200, v)
@@ -344,10 +478,18 @@ func respond(w http.ResponseWriter, v any, err error) {
 
 func respondCreated(w http.ResponseWriter, id int64, err error) {
 	if err != nil {
-		writeErr(w, 500, err.Error())
+		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, 201, map[string]int64{"id": id})
+}
+
+func writeStoreErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrRef) {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeErr(w, 500, err.Error())
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

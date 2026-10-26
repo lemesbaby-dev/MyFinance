@@ -6,10 +6,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"financas/internal/api"
+	"financas/internal/auth"
 	"financas/internal/store"
 )
 
@@ -21,10 +23,11 @@ func main() {
 	)
 	flag.Parse()
 
-	token := os.Getenv("FINANCAS_TOKEN")
-	if token == "" {
-		log.Println("AVISO: FINANCAS_TOKEN vazio — API sem autenticação. Use apenas em desenvolvimento.")
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	if clientID == "" {
+		log.Println("AVISO: GOOGLE_CLIENT_ID vazio — ninguém consegue entrar. Veja docs/04-api.md.")
 	}
+	maxUsers, _ := strconv.Atoi(env("MAX_USERS", "200"))
 
 	st, err := store.Open(*dbPath)
 	if err != nil {
@@ -34,7 +37,9 @@ func main() {
 
 	srv := &api.Server{
 		Store:         st,
-		Token:         token,
+		Verifier:      &auth.Google{ClientID: clientID},
+		ClientID:      clientID,
+		MaxUsers:      maxUsers,
 		Origins:       strings.Split(env("ALLOWED_ORIGINS", "https://localhost,http://localhost,capacitor://localhost,http://localhost:5173"), ","),
 		HorizonMonths: 12,
 	}

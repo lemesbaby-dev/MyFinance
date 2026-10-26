@@ -4,6 +4,7 @@ package store
 import (
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,6 +23,24 @@ var balancesSQL string
 var spendingSQL string
 
 type Store struct{ db *sql.DB }
+
+// ErrRef: conta/categoria/transferência apontando para algo que não é do usuário (ou não existe).
+var ErrRef = errors.New("conta ou categoria inválida")
+
+// checkRefs garante que os ids referenciados pertencem ao usuário. Sem isso, o FK do SQLite
+// aceitaria apontar para a conta de outra pessoa.
+func (s *Store) checkRefs(uid string, account int64, transfer, category *int64) error {
+	ok := func(table string, id int64) bool { // table é sempre constante interna
+		var n int
+		return s.db.QueryRow(`SELECT 1 FROM `+table+` WHERE id=? AND user_id=?`, id, uid).Scan(&n) == nil
+	}
+	if !ok("accounts", account) ||
+		(transfer != nil && !ok("accounts", *transfer)) ||
+		(category != nil && !ok("categories", *category)) {
+		return ErrRef
+	}
+	return nil
+}
 
 // Open abre (ou cria) o banco e aplica o schema.
 func Open(path string) (*Store, error) {
@@ -84,6 +103,7 @@ type Transaction struct {
 
 type Recurrence struct {
 	ID          int64   `json:"id"`
+	UserID      string  `json:"-"`
 	Kind        string  `json:"kind"`
 	Description string  `json:"description"`
 	AmountCents int64   `json:"amount_cents"`
@@ -104,20 +124,20 @@ type CategorySpending struct {
 
 // ---------- contas / categorias ----------
 
-func (s *Store) CreateAccount(a Account) (int64, error) {
+func (s *Store) CreateAccount(uid string, a Account) (int64, error) {
 	if a.Type == "" {
 		a.Type = "checking"
 	}
-	r, err := s.db.Exec(`INSERT INTO accounts(name,type,initial_balance_cents) VALUES(?,?,?)`,
-		a.Name, a.Type, a.InitialBalanceCents)
+	r, err := s.db.Exec(`INSERT INTO accounts(user_id,name,type,initial_balance_cents) VALUES(?,?,?,?)`,
+		uid, a.Name, a.Type, a.InitialBalanceCents)
 	if err != nil {
 		return 0, err
 	}
 	return r.LastInsertId()
 }
 
-func (s *Store) Balances(until string) ([]AccountBalance, error) {
-	rows, err := s.db.Query(balancesSQL, until)
+func (s *Store) Balances(uid, until string) ([]AccountBalance, error) {
+	rows, err := s.db.Query(balancesSQL, until, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -133,17 +153,23 @@ func (s *Store) Balances(until string) ([]AccountBalance, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) CreateCategory(c Category) (int64, error) {
-	r, err := s.db.Exec(`INSERT INTO categories(name,kind,parent_id,color) VALUES(?,?,?,?)`,
-		c.Name, c.Kind, c.ParentID, nullIfEmpty(c.Color))
+func (s *Store) CreateCategory(uid string, c Category) (int64, error) {
+	if c.ParentID != nil {
+		var n int
+		if s.db.QueryRow(`SELECT 1 FROM categories WHERE id=? AND user_id=?`, *c.ParentID, uid).Scan(&n) != nil {
+			return 0, ErrRef
+		}
+	}
+	r, err := s.db.Exec(`INSERT INTO categories(user_id,name,kind,parent_id,color) VALUES(?,?,?,?,?)`,
+		uid, c.Name, c.Kind, c.ParentID, nullIfEmpty(c.Color))
 	if err != nil {
 		return 0, err
 	}
 	return r.LastInsertId()
 }
 
-func (s *Store) Categories() ([]Category, error) {
-	rows, err := s.db.Query(`SELECT id,name,kind,parent_id,COALESCE(color,'') FROM categories ORDER BY kind,name`)
+func (s *Store) Categories(uid string) ([]Category, error) {
+	rows, err := s.db.Query(`SELECT id,name,kind,parent_id,COALESCE(color,'') FROM categories WHERE user_id=? ORDER BY kind,name`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -159,8 +185,8 @@ func (s *Store) Categories() ([]Category, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) SpendingByCategory(from, to string) ([]CategorySpending, error) {
-	rows, err := s.db.Query(spendingSQL, from, to)
+func (s *Store) SpendingByCategory(uid, from, to string) ([]CategorySpending, error) {
+	rows, err := s.db.Query(spendingSQL, from, to, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -190,10 +216,10 @@ func scanTx(sc interface{ Scan(...any) error }) (Transaction, error) {
 }
 
 // ListTransactions filtra por período e (opcionalmente) status. Strings vazias = sem filtro.
-func (s *Store) ListTransactions(from, to, status string) ([]Transaction, error) {
+func (s *Store) ListTransactions(uid, from, to, status string) ([]Transaction, error) {
 	rows, err := s.db.Query(`SELECT `+txCols+` FROM transactions
-		WHERE (?1 = '' OR date >= ?1) AND (?2 = '' OR date <= ?2) AND (?3 = '' OR status = ?3)
-		ORDER BY date, id`, from, to, status)
+		WHERE user_id = ?4 AND (?1 = '' OR date >= ?1) AND (?2 = '' OR date <= ?2) AND (?3 = '' OR status = ?3)
+		ORDER BY date, id`, from, to, status, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +235,10 @@ func (s *Store) ListTransactions(from, to, status string) ([]Transaction, error)
 	return out, rows.Err()
 }
 
-func (s *Store) CreateTransaction(t Transaction) (int64, error) {
+func (s *Store) CreateTransaction(uid string, t Transaction) (int64, error) {
+	if err := s.checkRefs(uid, t.AccountID, t.TransferAccountID, t.CategoryID); err != nil {
+		return 0, err
+	}
 	if t.Status == "" {
 		t.Status = "pending"
 	}
@@ -218,9 +247,9 @@ func (s *Store) CreateTransaction(t Transaction) (int64, error) {
 		t.PaidAt = &d
 	}
 	r, err := s.db.Exec(`INSERT INTO transactions
-		(kind,description,amount_cents,date,status,paid_at,account_id,transfer_account_id,category_id,notes)
-		VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		t.Kind, t.Description, t.AmountCents, t.Date, t.Status, t.PaidAt, t.AccountID,
+		(user_id,kind,description,amount_cents,date,status,paid_at,account_id,transfer_account_id,category_id,notes)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		uid, t.Kind, t.Description, t.AmountCents, t.Date, t.Status, t.PaidAt, t.AccountID,
 		t.TransferAccountID, t.CategoryID, nullIfEmpty(t.Notes))
 	if err != nil {
 		return 0, err
@@ -229,7 +258,10 @@ func (s *Store) CreateTransaction(t Transaction) (int64, error) {
 }
 
 // CreateInstallments cria as N parcelas de uma compra numa única transação SQL.
-func (s *Store) CreateInstallments(base Transaction, n int, first time.Time) ([]int64, error) {
+func (s *Store) CreateInstallments(uid string, base Transaction, n int, first time.Time) ([]int64, error) {
+	if err := s.checkRefs(uid, base.AccountID, nil, base.CategoryID); err != nil {
+		return nil, err
+	}
 	parts, err := finance.SplitInstallments(finance.Cents(base.AmountCents), n, first)
 	if err != nil {
 		return nil, err
@@ -243,10 +275,10 @@ func (s *Store) CreateInstallments(base Transaction, n int, first time.Time) ([]
 	ids := make([]int64, 0, n)
 	for _, p := range parts {
 		r, err := tx.Exec(`INSERT INTO transactions
-			(kind,description,amount_cents,date,status,account_id,category_id,
-			 installment_no,installment_total,installment_group)
-			VALUES(?,?,?,?, 'pending', ?,?,?,?,?)`,
-			base.Kind, base.Description, int64(p.Amount), finance.FormatDate(p.Date),
+			(user_id,kind,description,amount_cents,date,status,account_id,category_id,
+				 installment_no,installment_total,installment_group)
+				VALUES(?,?,?,?,?, 'pending', ?,?,?,?,?)`,
+			uid, base.Kind, base.Description, int64(p.Amount), finance.FormatDate(p.Date),
 			base.AccountID, base.CategoryID, p.No, p.Total, group)
 		if err != nil {
 			return nil, err
@@ -258,11 +290,11 @@ func (s *Store) CreateInstallments(base Transaction, n int, first time.Time) ([]
 }
 
 // MarkPaid efetiva um lançamento pendente. paidAt vazio = hoje.
-func (s *Store) MarkPaid(id int64, paidAt string) error {
+func (s *Store) MarkPaid(uid string, id int64, paidAt string) error {
 	if paidAt == "" {
 		paidAt = time.Now().Format("2006-01-02")
 	}
-	r, err := s.db.Exec(`UPDATE transactions SET status='paid', paid_at=? WHERE id=? AND status='pending'`, paidAt, id)
+	r, err := s.db.Exec(`UPDATE transactions SET status='paid', paid_at=? WHERE id=? AND user_id=? AND status='pending'`, paidAt, id, uid)
 	if err != nil {
 		return err
 	}
@@ -272,37 +304,41 @@ func (s *Store) MarkPaid(id int64, paidAt string) error {
 	return nil
 }
 
-func (s *Store) MarkPending(id int64) error {
-	_, err := s.db.Exec(`UPDATE transactions SET status='pending', paid_at=NULL WHERE id=?`, id)
+func (s *Store) MarkPending(uid string, id int64) error {
+	_, err := s.db.Exec(`UPDATE transactions SET status='pending', paid_at=NULL WHERE id=? AND user_id=?`, id, uid)
 	return err
 }
 
-func (s *Store) DeleteTransaction(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM transactions WHERE id=?`, id)
+func (s *Store) DeleteTransaction(uid string, id int64) error {
+	_, err := s.db.Exec(`DELETE FROM transactions WHERE id=? AND user_id=?`, id, uid)
 	return err
 }
 
 // ---------- recorrências ----------
 
 // CreateRecurrence grava a regra e já materializa as ocorrências até `horizon`.
-func (s *Store) CreateRecurrence(r Recurrence, horizon time.Time) (int64, error) {
+func (s *Store) CreateRecurrence(uid string, r Recurrence, horizon time.Time) (int64, error) {
+	if err := s.checkRefs(uid, r.AccountID, nil, r.CategoryID); err != nil {
+		return 0, err
+	}
 	res, err := s.db.Exec(`INSERT INTO recurrences
-		(kind,description,amount_cents,account_id,category_id,frequency,interval_n,start_date,end_date)
-		VALUES(?,?,?,?,?,?,?,?,?)`,
-		r.Kind, r.Description, r.AmountCents, r.AccountID, r.CategoryID,
+		(user_id,kind,description,amount_cents,account_id,category_id,frequency,interval_n,start_date,end_date)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		uid, r.Kind, r.Description, r.AmountCents, r.AccountID, r.CategoryID,
 		r.Frequency, r.IntervalN, r.StartDate, r.EndDate)
 	if err != nil {
 		return 0, err
 	}
 	id, _ := res.LastInsertId()
-	r.ID = id
+	r.ID, r.UserID = id, uid
+
 	return id, s.materialize(r, "", horizon)
 }
 
 // MaterializeAll gera as ocorrências que faltam de todas as recorrências ativas.
 // Rode na subida do servidor e uma vez por dia: a janela rola sozinha.
 func (s *Store) MaterializeAll(horizon time.Time) error {
-	rows, err := s.db.Query(`SELECT id,kind,description,amount_cents,account_id,category_id,
+	rows, err := s.db.Query(`SELECT id,user_id,kind,description,amount_cents,account_id,category_id,
 		frequency,interval_n,start_date,end_date,COALESCE(generated_until,'')
 		FROM recurrences WHERE active=1`)
 	if err != nil {
@@ -315,7 +351,7 @@ func (s *Store) MaterializeAll(horizon time.Time) error {
 	var items []item
 	for rows.Next() {
 		var it item
-		if err := rows.Scan(&it.r.ID, &it.r.Kind, &it.r.Description, &it.r.AmountCents, &it.r.AccountID,
+		if err := rows.Scan(&it.r.ID, &it.r.UserID, &it.r.Kind, &it.r.Description, &it.r.AmountCents, &it.r.AccountID,
 			&it.r.CategoryID, &it.r.Frequency, &it.r.IntervalN, &it.r.StartDate, &it.r.EndDate, &it.since); err != nil {
 			rows.Close()
 			return err
@@ -367,9 +403,9 @@ func (s *Store) materialize(r Recurrence, since string, horizon time.Time) error
 	for _, d := range occ {
 		ds := finance.FormatDate(d)
 		if _, err := tx.Exec(`INSERT OR IGNORE INTO transactions
-			(kind,description,amount_cents,date,status,account_id,category_id,recurrence_id)
-			VALUES(?,?,?,?, 'pending', ?,?,?)`,
-			r.Kind, r.Description, r.AmountCents, ds, r.AccountID, r.CategoryID, r.ID); err != nil {
+			(user_id,kind,description,amount_cents,date,status,account_id,category_id,recurrence_id)
+			VALUES(?,?,?,?,?, 'pending', ?,?,?)`,
+			r.UserID, r.Kind, r.Description, r.AmountCents, ds, r.AccountID, r.CategoryID, r.ID); err != nil {
 			return err
 		}
 		last = ds
