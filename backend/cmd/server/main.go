@@ -17,7 +17,7 @@ import (
 
 func main() {
 	var (
-		addr   = flag.String("addr", env("ADDR", ":8080"), "endereço de escuta")
+		addr   = flag.String("addr", env("ADDR", "127.0.0.1:8080"), "endereço de escuta")
 		dbPath = flag.String("db", env("DB_PATH", "financas.db"), "arquivo SQLite")
 		static = flag.String("static", env("STATIC_DIR", "../frontend/dist"), "pasta do front compilado")
 	)
@@ -27,7 +27,10 @@ func main() {
 	if clientID == "" {
 		log.Println("AVISO: GOOGLE_CLIENT_ID vazio — ninguém consegue entrar. Veja docs/04-api.md.")
 	}
-	maxUsers, _ := strconv.Atoi(env("MAX_USERS", "200"))
+	maxUsers, err := strconv.Atoi(env("MAX_USERS", "200")) // "0" = sem limite
+	if err != nil || maxUsers < 0 {
+		log.Fatalf("MAX_USERS inválido: %q (use um inteiro >= 0)", os.Getenv("MAX_USERS"))
+	}
 
 	st, err := store.Open(*dbPath)
 	if err != nil {

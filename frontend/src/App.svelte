@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { api, ApiError, hasSession, clearSession } from './lib/api.js';
+  import { api, hasSession, clearSession, setUnauthorizedHandler } from './lib/api.js';
   import { money, shortDate, endOfMonthISO, isoToday } from './lib/format.js';
   import Login from './Login.svelte';
   import TxForm from './TxForm.svelte';
@@ -34,7 +34,6 @@
         api.categories(),
       ]);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) { clearSession(); needLogin = true; } // sessão vencida/revogada
       error = e.message;
     } finally {
       ready = true;
@@ -50,11 +49,18 @@
   }
 
   async function logout() {
-    try { await api.logout(); } catch { /* sem rede: encerra só localmente */ }
+    let warn = '';
+    try { await api.logout(); } catch { warn = 'Sessão encerrada neste aparelho, mas não foi possível revogá-la no servidor.'; }
+    reset();
+    if (warn) alert(warn); // a tela de login não mostra `error`
+  }
+
+  function reset() {
     clearSession();
     summary = null; pending = []; categories = []; user = null;
     needLogin = true;
   }
+  setUnauthorizedHandler(reset); // sessão vencida/revogada em qualquer chamada
 
   function loggedIn(u) { user = u; needLogin = false; ready = false; load(); }
 

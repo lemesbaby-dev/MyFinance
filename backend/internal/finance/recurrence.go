@@ -76,14 +76,17 @@ func (r Rule) Validate() error {
 	default:
 		return errors.New("frequência inválida")
 	}
-	if r.Interval < 1 {
-		return errors.New("intervalo deve ser >= 1")
+	if r.Interval < 1 || r.Interval > MaxInterval {
+		return errors.New("intervalo deve estar entre 1 e 1000")
 	}
 	if r.End != nil && r.End.Before(r.Start) {
 		return errors.New("data final anterior à inicial")
 	}
 	return nil
 }
+
+// MaxInterval limita Interval (evita overflow em n*Interval).
+const MaxInterval = 1000
 
 // maxOccurrences protege contra regras absurdas (ex.: diária por 100 anos).
 const maxOccurrences = 5000

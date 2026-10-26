@@ -23,6 +23,8 @@ var ErrSignupsClosed = errors.New("cadastros encerrados")
 // ErrNoSession: token inexistente, expirado ou revogado.
 var ErrNoSession = errors.New("sessão inválida")
 
+const maxSessions = 20
+
 const tsFmt = time.RFC3339 // UTC: ordena como texto
 
 func randHex(n int) string {
@@ -75,7 +77,13 @@ func (s *Store) NewSession(uid, device string, ttl time.Duration) (string, error
 	_, _ = s.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now.Format(tsFmt)) // faxina barata
 	_, err := s.db.Exec(`INSERT INTO sessions(token_hash,user_id,device,expires_at) VALUES(?,?,?,?)`,
 		hashToken(token), uid, device, now.Add(ttl).Format(tsFmt))
-	return token, err
+	if err != nil {
+		return token, err
+	}
+	// no máximo maxSessions por usuário: apaga as mais antigas
+	_, _ = s.db.Exec(`DELETE FROM sessions WHERE user_id=? AND rowid NOT IN
+		(SELECT rowid FROM sessions WHERE user_id=? ORDER BY rowid DESC LIMIT ?)`, uid, uid, maxSessions)
+	return token, nil
 }
 
 // SessionUser resolve o token no usuário e renova a validade (janela deslizante) no máximo

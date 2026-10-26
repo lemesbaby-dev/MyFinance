@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -126,7 +127,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
-			writeErr(w, 500, err.Error())
+			writeStoreErr(w, err)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, u)))
@@ -134,8 +135,8 @@ func (s *Server) auth(next http.Handler) http.Handler {
 }
 
 // limiter: no máximo N tentativas por IP por minuto (em memória; some ao reiniciar).
-// ponytail: atrás do Caddy usa o último X-Forwarded-For; exposto direto na internet daria para
-// forjar o cabeçalho — sempre rode atrás do proxy.
+// Atrás do proxy (conexão de loopback) usa o último X-Forwarded-For; em conexão direta usa RemoteAddr.
+// ponytail: cota por usuário (além de por IP) fica para o M2, junto do /sync.
 type limiter struct {
 	mu   sync.Mutex
 	hits map[string][]time.Time
@@ -154,6 +155,16 @@ func (l *limiter) allow(ip string, n int) bool {
 			kept = append(kept, t)
 		}
 	}
+	if len(l.hits) > 1000 { // varre IPs que nunca voltaram, para o mapa não crescer sem limite
+		for k, ts := range l.hits {
+			if k != ip && (len(ts) == 0 || ts[len(ts)-1].Before(cut)) {
+				delete(l.hits, k)
+			}
+		}
+	}
+	if len(kept) == 0 {
+		delete(l.hits, ip) // sem hit na janela: não deixa a chave velha no mapa
+	}
 	if len(kept) >= n {
 		l.hits[ip] = kept
 		return false
@@ -163,11 +174,13 @@ func (l *limiter) allow(ip string, n int) bool {
 }
 
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[len(parts)-1])
-	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
+	}
 	return host
 }
 
@@ -187,8 +200,13 @@ func (s *Server) loginGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.Verifier.Verify(r.Context(), in.IDToken)
+	if errors.Is(err, auth.ErrUpstream) {
+		log.Printf("google: %v", err)
+		writeErr(w, 503, "Google indisponível, tente novamente")
+		return
+	}
 	if err != nil {
-		writeErr(w, 401, err.Error())
+		writeErr(w, 401, "token do Google inválido")
 		return
 	}
 	u, err := s.Store.UpsertGoogleUser(c.Sub, c.Email, c.Name, c.Picture, s.MaxUsers)
@@ -197,7 +215,7 @@ func (s *Server) loginGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, 500, err.Error())
+		writeStoreErr(w, err)
 		return
 	}
 	dev := in.Device
@@ -206,7 +224,7 @@ func (s *Server) loginGoogle(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := s.Store.NewSession(u.ID, dev, s.ttl())
 	if err != nil {
-		writeErr(w, 500, err.Error())
+		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok, "user": u})
@@ -231,7 +249,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 
 	balances, err := s.Store.Balances(userFrom(r).ID, until)
 	if err != nil {
-		writeErr(w, 500, err.Error())
+		writeStoreErr(w, err)
 		return
 	}
 	var cur, proj int64
@@ -241,7 +259,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	}
 	spending, err := s.Store.SpendingByCategory(userFrom(r).ID, monthStart, finance.FormatDate(endOfMonth(now)))
 	if err != nil {
-		writeErr(w, 500, err.Error())
+		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{
@@ -290,6 +308,8 @@ func (s *Server) listTransactions(w http.ResponseWriter, r *http.Request) {
 	respond(w, ts, err)
 }
 
+const maxInstallments = 120
+
 type createTxReq struct {
 	store.Transaction
 	Installments int `json:"installments"` // >1 = compra parcelada
@@ -303,6 +323,10 @@ func (s *Server) createTransaction(w http.ResponseWriter, r *http.Request) {
 	t := in.Transaction
 	if err := validateTx(t); err != nil {
 		writeErr(w, 400, err.Error())
+		return
+	}
+	if in.Installments < 0 || in.Installments > maxInstallments {
+		writeErr(w, 400, "parcelas deve estar entre 0 e 120")
 		return
 	}
 	if in.Installments > 1 {
@@ -367,8 +391,12 @@ func (s *Server) createRecurrence(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &rec) {
 		return
 	}
-	if rec.IntervalN < 1 {
+	if rec.IntervalN == 0 {
 		rec.IntervalN = 1
+	}
+	if rec.IntervalN < 1 || rec.IntervalN > finance.MaxInterval {
+		writeErr(w, 400, "interval_n deve estar entre 1 e 1000")
+		return
 	}
 	if rec.Kind != "income" && rec.Kind != "expense" {
 		writeErr(w, 400, "tipo deve ser income ou expense")
@@ -489,7 +517,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	writeErr(w, 500, err.Error())
+	log.Printf("erro interno: %v", err)
+	writeErr(w, 500, "erro interno")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

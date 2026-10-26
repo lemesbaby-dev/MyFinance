@@ -50,13 +50,15 @@ func (g *Google) keys(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	if g.Keys != nil {
 		m, err := g.Keys(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 		}
 		if k := m[kid]; k != nil {
 			return k, nil
 		}
 		return nil, errors.New("kid desconhecido")
 	}
+	// ponytail: busca das chaves sob o lock (timeout de 5s no cliente HTTP); fora do lock só
+	// se o login concorrente virar gargalo.
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	// Cache de 1h; kid novo (rotação de chaves) força nova busca, no máximo 1x por minuto.
@@ -64,7 +66,7 @@ func (g *Google) keys(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	if g.cache == nil || age > time.Hour || (g.cache[kid] == nil && age > time.Minute) {
 		m, err := fetchCerts(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 		}
 		g.cache, g.fetched = m, g.now()
 	}
@@ -102,6 +104,9 @@ func fetchCerts(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	return out, nil
 }
 
+// ErrUpstream: falha ao obter as chaves do Google (infra), não culpa do token.
+var ErrUpstream = errors.New("google indisponível")
+
 var errInvalid = errors.New("token do Google inválido")
 
 // Verify confere assinatura (RS256), emissor, audiência, validade e e-mail verificado.
@@ -116,6 +121,9 @@ func (g *Google) Verify(ctx context.Context, idToken string) (Claims, error) {
 	}
 	key, err := g.keys(ctx, hdr.Kid)
 	if err != nil {
+		if errors.Is(err, ErrUpstream) {
+			return Claims{}, err
+		}
 		return Claims{}, fmt.Errorf("%w: %v", errInvalid, err)
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])

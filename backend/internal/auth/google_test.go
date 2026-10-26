@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -62,5 +63,20 @@ func TestVerify(t *testing.T) {
 		if _, err := g.Verify(context.Background(), tok); err == nil {
 			t.Errorf("%s: token aceito, deveria ser recusado", name)
 		}
+	}
+}
+
+func TestFalhaDeInfraNaoViraTokenInvalido(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	g := &Google{ClientID: "cid", Keys: func(context.Context) (map[string]*rsa.PublicKey, error) {
+		return nil, errors.New("rede caiu")
+	}}
+	tok := sign(t, key, "RS256", map[string]any{"aud": "cid"})
+	if _, err := g.Verify(context.Background(), tok); !errors.Is(err, ErrUpstream) {
+		t.Errorf("erro = %v, quero ErrUpstream", err)
+	}
+	g.Keys = func(context.Context) (map[string]*rsa.PublicKey, error) { return map[string]*rsa.PublicKey{}, nil }
+	if _, err := g.Verify(context.Background(), tok); err == nil || errors.Is(err, ErrUpstream) {
+		t.Errorf("kid desconhecido não é falha de infra: %v", err)
 	}
 }

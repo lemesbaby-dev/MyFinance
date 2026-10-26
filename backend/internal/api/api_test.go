@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -239,6 +240,103 @@ func TestValidacao(t *testing.T) {
 		if code, _, _ := e.do("POST", "/api/transactions", "", b); code != 400 {
 			t.Errorf("caso inválido %d aceito (status %d)", i, code)
 		}
+	}
+}
+
+func TestLimitesDeEntrada(t *testing.T) {
+	e := newEnv(t)
+	_, o, _ := e.do("POST", "/api/accounts", "", map[string]any{"name": "A"})
+	a := id(o)
+	tx := map[string]any{"kind": "expense", "description": "x", "amount_cents": 100000, "date": "2026-10-01", "account_id": a}
+	for _, n := range []int{121, 1 << 30, -1} {
+		tx["installments"] = n
+		if code, _, _ := e.do("POST", "/api/transactions", "", tx); code != 400 {
+			t.Errorf("installments=%d aceito (status %d)", n, code)
+		}
+	}
+	tx["installments"] = 120
+	if code, _, _ := e.do("POST", "/api/transactions", "", tx); code != 201 {
+		t.Errorf("installments=120 deveria ser aceito, deu %d", code)
+	}
+	for _, n := range []int{-5, 1001, 1 << 40} {
+		code, _, _ := e.do("POST", "/api/recurrences", "", map[string]any{"kind": "expense", "description": "x",
+			"amount_cents": 1, "account_id": a, "frequency": "monthly", "start_date": "2026-10-01", "interval_n": n})
+		if code != 400 {
+			t.Errorf("interval_n=%d aceito (status %d)", n, code)
+		}
+	}
+}
+
+func TestLimiterEClientIP(t *testing.T) {
+	var l limiter
+	l.allow("1.1.1.1", 1)
+	l.hits["1.1.1.1"][0] = time.Now().Add(-2 * time.Minute) // hit velho
+	if !l.allow("1.1.1.1", 1) || len(l.hits["1.1.1.1"]) != 1 {
+		t.Error("hit vencido deveria liberar")
+	}
+	for i := 0; i < 1500; i++ { // IPs que nunca voltam
+		l.hits[strconv.Itoa(i)] = []time.Time{time.Now().Add(-2 * time.Minute)}
+	}
+	l.allow("3.3.3.3", 1)
+	if len(l.hits) > 3 {
+		t.Errorf("mapa não foi limpo: %d chaves", len(l.hits))
+	}
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Forwarded-For", "9.9.9.9")
+	r.RemoteAddr = "203.0.113.5:1234"
+	if ip := clientIP(r); ip != "203.0.113.5" {
+		t.Errorf("XFF forjado confiado: %s", ip)
+	}
+	r.RemoteAddr = "127.0.0.1:1234"
+	if ip := clientIP(r); ip != "9.9.9.9" {
+		t.Errorf("atrás do proxy deveria usar XFF: %s", ip)
+	}
+}
+
+func TestMaxSessoes(t *testing.T) {
+	e := newEnv(t)
+	uid := userID(t, e)
+	first, _ := e.st.NewSession(uid, "x", time.Hour)
+	for i := 0; i < 25; i++ {
+		e.st.NewSession(uid, "x", time.Hour)
+	}
+	if code, _, _ := e.do("GET", "/api/summary", first, nil); code != 401 {
+		t.Errorf("sessão mais antiga deveria ter sido apagada, deu %d", code)
+	}
+	if code, _, _ := e.do("GET", "/api/summary", "", nil); code != 401 {
+		// e.tok (login inicial) também é antiga demais: 26+ sessões emitidas
+		t.Errorf("sessão inicial deveria ter sido apagada, deu %d", code)
+	}
+}
+
+type errVerifier struct{ err error }
+
+func (v errVerifier) Verify(context.Context, string) (auth.Claims, error) {
+	return auth.Claims{}, v.err
+}
+
+func TestErrosNaoVazam(t *testing.T) {
+	e := newEnv(t)
+	for _, c := range []struct {
+		err  error
+		code int
+		msg  string
+	}{
+		{auth.ErrUpstream, 503, "Google indisponível, tente novamente"},
+		{errors.New("segredo interno: aud=xyz"), 401, "token do Google inválido"},
+	} {
+		h := (&Server{Store: e.st, Verifier: errVerifier{c.err}}).Handler()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/auth/google", strings.NewReader(`{"id_token":"x"}`)))
+		if rec.Code != c.code || !strings.Contains(rec.Body.String(), c.msg) || strings.Contains(rec.Body.String(), "segredo") {
+			t.Errorf("status %d corpo %s, quero %d %q", rec.Code, rec.Body.String(), c.code, c.msg)
+		}
+	}
+	rec := httptest.NewRecorder()
+	writeStoreErr(rec, errors.New("SQL: tabela x quebrou"))
+	if rec.Code != 500 || strings.Contains(rec.Body.String(), "SQL") {
+		t.Errorf("erro interno vazou: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

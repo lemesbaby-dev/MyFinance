@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	_ "modernc.org/sqlite" // driver SQLite puro Go (sem CGO)
@@ -321,7 +322,12 @@ func (s *Store) CreateRecurrence(uid string, r Recurrence, horizon time.Time) (i
 	if err := s.checkRefs(uid, r.AccountID, nil, r.CategoryID); err != nil {
 		return 0, err
 	}
-	res, err := s.db.Exec(`INSERT INTO recurrences
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO recurrences
 		(user_id,kind,description,amount_cents,account_id,category_id,frequency,interval_n,start_date,end_date)
 		VALUES(?,?,?,?,?,?,?,?,?,?)`,
 		uid, r.Kind, r.Description, r.AmountCents, r.AccountID, r.CategoryID,
@@ -332,7 +338,11 @@ func (s *Store) CreateRecurrence(uid string, r Recurrence, horizon time.Time) (i
 	id, _ := res.LastInsertId()
 	r.ID, r.UserID = id, uid
 
-	return id, s.materialize(r, "", horizon)
+	// regra e ocorrências na mesma transação: se materializar falhar, a regra não fica órfã
+	if err := materializeTx(tx, r, "", horizon); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // MaterializeAll gera as ocorrências que faltam de todas as recorrências ativas.
@@ -359,17 +369,33 @@ func (s *Store) MaterializeAll(horizon time.Time) error {
 		items = append(items, it)
 	}
 	rows.Close()
+	var first error
 	for _, it := range items {
 		if err := s.materialize(it.r, it.since, horizon); err != nil {
-			return err
+			log.Printf("recorrência %d: %v", it.r.ID, err)
+			if first == nil {
+				first = err
+			}
 		}
 	}
-	return nil
+	return first
 }
 
 // materialize insere as ocorrências em (since, horizon]. O índice único
 // (recurrence_id, date) torna a operação idempotente: rodar duas vezes não duplica.
 func (s *Store) materialize(r Recurrence, since string, horizon time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := materializeTx(tx, r, since, horizon); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func materializeTx(tx *sql.Tx, r Recurrence, since string, horizon time.Time) error {
 	start, err := finance.ParseDate(r.StartDate)
 	if err != nil {
 		return err
@@ -394,11 +420,6 @@ func (s *Store) materialize(r Recurrence, since string, horizon time.Time) error
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	last := since
 	for _, d := range occ {
 		ds := finance.FormatDate(d)
@@ -415,7 +436,7 @@ func (s *Store) materialize(r Recurrence, since string, horizon time.Time) error
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func nullIfEmpty(s string) any {

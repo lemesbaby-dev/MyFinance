@@ -25,3 +25,5 @@ Cada marco termina com algo que roda e foi validado. Ordem pensada para provar o
 - **Sync/offline**: testes automatizados de servidor (idempotência, tombstone, isolamento) + teste manual em modo avião.
 - **Dinheiro/recorrência**: testes unitários dirigidos (dia 31, bissexto, parcelas).
 - **Deploy/backup**: restauração real, não só "o cron rodou".
+
+> Nota M1: exige banco novo; o schema do M0 não é migrado (M0 nunca foi para produção).

@@ -13,6 +13,10 @@ export const saveConn = (c) => localStorage.setItem(KEY, JSON.stringify(c));
 export const hasSession = () => !!loadConn().token;
 export const clearSession = () => saveConn({ ...loadConn(), token: '' });
 
+// 401 tratado num lugar só: limpa a sessão e avisa quem se registrou (App.svelte).
+let onUnauthorized = null;
+export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
+
 export class ApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -36,6 +40,10 @@ async function call(method, path, body) {
     throw new ApiError(0, 'Sem conexão com o servidor.');
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) {
+    clearSession();
+    onUnauthorized?.();
+  }
   if (!res.ok) throw new ApiError(res.status, data.error ?? `Erro ${res.status}`);
   return data;
 }

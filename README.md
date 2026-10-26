@@ -1,7 +1,7 @@
 # Finanças
 
 App pessoal de controle financeiro: **saldo atual**, **saldo previsto**, categorias,
-recorrências e parcelamentos. Roda no navegador (PWA) e no Android (APK via Capacitor).
+recorrências e parcelamentos. Roda no navegador (PWA).
 
 ```
 frontend/  Svelte 5 + Vite (PWA)  ──► build estático em frontend/dist
@@ -63,21 +63,14 @@ ADDR=127.0.0.1:8080 ./financas
 
 - Coloque atrás de um proxy com **HTTPS** (Caddy ou Nginx): a sessão trafega no header e o login Google exige HTTPS.
 - **Backup**: copie o arquivo `.db` (use `sqlite3 financas.db ".backup out.db"` com o app rodando).
+- **M1 exige banco novo**; o schema do M0 não é migrado (M0 nunca foi para produção).
+- `ADDR` padrão é `127.0.0.1:8080` (atrás do proxy); só confiamos em `X-Forwarded-For` quando a conexão vem de loopback.
 - Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS).
 
 ## APK (Android)
 
-Requer Android Studio (ou SDK + JDK 17).
-
-```bash
-cd frontend
-npx cap add android         # 1ª vez: gera a pasta android/
-npm run android:sync        # build + copia o front para o projeto Android
-npm run android:open        # abre no Android Studio → Build > Build APK(s)
-```
-
-Na primeira abertura do app, informe a URL HTTPS do servidor e o token. O APK usa a origem
-`https://localhost` (já liberada no CORS por padrão).
+**Fora do escopo:** o alvo é o PWA. O Capacitor/APK não é mantido e a tela de configuração
+de servidor foi removida; o app de Android não funciona nesta versão.
 
 ## API
 
