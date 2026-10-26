@@ -3,7 +3,7 @@
   import { money } from '../lib/format.js';
   import { centsFromInput } from './money.js';
   // value = centavos (inteiro). Digitação "pela direita": 1 → 0,01; 12 → 0,12; 123 → 1,23.
-  let { label, help = '', error = '', value = $bindable(0), ...rest } = $props();
+  let { label, help = '', error = '', value = $bindable(0) } = $props();
   function oninput(e) {
     value = centsFromInput(e.currentTarget.value);
     e.currentTarget.value = money(value);
@@ -11,7 +11,7 @@
 </script>
 
 <Field {label} {help} {error}>
-  {#snippet children(a)}<input class="ui-money" inputmode="numeric" autocomplete="off" value={money(value)} {oninput} {...a} {...rest} />{/snippet}
+  {#snippet children(a)}<input class="ui-money" inputmode="numeric" autocomplete="off" value={money(value)} {oninput} id={a.id} aria-invalid={a['aria-invalid']} aria-describedby={a['aria-describedby']} />{/snippet}
 </Field>
 
 <style>

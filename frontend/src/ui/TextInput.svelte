@@ -1,10 +1,11 @@
 <script>
   import Field from './Field.svelte';
-  let { label, help = '', error = '', value = $bindable(''), type = 'text', ...rest } = $props();
+  // Atributos explícitos (sem spread): o spread puxa set_attributes do Svelte para o bundle.
+  let { label, help = '', error = '', value = $bindable(''), type = 'text', placeholder, maxlength, min, max, inputmode, autocomplete, required, disabled } = $props();
 </script>
 
 <Field {label} {help} {error}>
-  {#snippet children(a)}<input class="ui-input" {type} bind:value {...a} {...rest} />{/snippet}
+  {#snippet children(a)}<input class="ui-input" {type} {value} oninput={(e) => (value = e.currentTarget.value)} id={a.id} aria-invalid={a['aria-invalid']} aria-describedby={a['aria-describedby']} {placeholder} {maxlength} {min} {max} {inputmode} {autocomplete} {required} {disabled} />{/snippet}
 </Field>
 
 <style>

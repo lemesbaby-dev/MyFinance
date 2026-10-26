@@ -19,7 +19,7 @@
   import Banner from './ui/Banner.svelte';
   import Button from './ui/Button.svelte';
   import Skeleton from './ui/Skeleton.svelte';
-  import ErrorState from './ui/ErrorState.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
 
   const TABS = [['month', 'Mês', 'home'], ['accounts', 'Contas', 'wallet'], ['categories', 'Categorias', 'tag'], ['more', 'Mais', 'sliders']];
 
@@ -115,7 +115,7 @@
   </main>
 {:else if !app.ready}
   <main class="center">
-    {#if error}<ErrorState text={error} onretry={() => boot()} />
+    {#if error}<EmptyState icon="alert" tone="danger" role="alert" title="Não deu certo" text={error} actionLabel="Tentar de novo" onaction={() => boot()} />
     {:else}<Skeleton kind="row" count={3} />{/if}
   </main>
 {:else if showFirstRun}

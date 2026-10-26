@@ -1,9 +1,9 @@
 <script>
   // variant: primary | secondary | ghost | danger. size: md | sm (ambos com alvo >= 44px).
-  let { variant = 'primary', size = 'md', loading = false, disabled = false, block = false, type = 'button', onclick, autofocus = false, children, ...rest } = $props();
+  let { variant = 'primary', size = 'md', loading = false, disabled = false, block = false, type = 'button', onclick, autofocus = false, children, 'aria-label': ariaLabel } = $props();
 </script>
 
-<button class="ui-btn {variant} {size}" class:block {type} disabled={disabled || loading} aria-busy={loading || undefined} {onclick} data-autofocus={autofocus || undefined} {...rest}>
+<button class="ui-btn {variant} {size}" class:block {type} disabled={disabled || loading} aria-busy={loading || undefined} {onclick} data-autofocus={autofocus || undefined} aria-label={ariaLabel}>
   {#if loading}<span class="spin" aria-hidden="true"></span>{/if}
   {@render children?.()}
 </button>

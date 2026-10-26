@@ -2,14 +2,12 @@
   import { app, saveTx, createInstallments, createRecurrence, editRecurring } from './lib/app.svelte.js';
   import { MAX_INSTALLMENTS, isValidISO, todayISO } from './lib/finance.js';
   import Scope from './Scope.svelte';
-  import Sheet from './ui/Sheet.svelte';
+  import FormSheet from './ui/FormSheet.svelte';
   import Segmented from './ui/Segmented.svelte';
   import MoneyInput from './ui/MoneyInput.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
   import Switch from './ui/Switch.svelte';
-  import Button from './ui/Button.svelte';
-  import Banner from './ui/Banner.svelte';
 
   // tx = lançamento existente (edição); sem tx = novo.
   let { tx = null, onclose } = $props();
@@ -94,48 +92,38 @@
   }
 </script>
 
-<Sheet title={editing ? 'Editar lançamento' : 'Novo lançamento'} {onclose}>
-  <form novalidate onsubmit={submit}>
-    <Segmented label="Tipo" options={KINDS} bind:value={kind} onchange={() => { categoryId = ''; installments = 1; repeat = 'none'; }} />
+<FormSheet title={editing ? 'Editar lançamento' : 'Novo lançamento'} {onclose} onsubmit={submit} {busy} error={errField ? '' : error}>
+  <Segmented label="Tipo" options={KINDS} bind:value={kind} onchange={() => { categoryId = ''; installments = 1; repeat = 'none'; }} />
 
-    <MoneyInput label="Valor (R$)" bind:value={amount} error={err('amount')} />
-    <TextInput label="Descrição" bind:value={description} maxlength="200" placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} error={err('description')} />
-    <TextInput label={kind === 'income' ? 'Data de recebimento' : 'Vencimento'} type="date" bind:value={date} error={err('date')} />
+  <MoneyInput label="Valor (R$)" bind:value={amount} error={err('amount')} />
+  <TextInput label="Descrição" bind:value={description} maxlength="200" placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} error={err('description')} />
+  <TextInput label={kind === 'income' ? 'Data de recebimento' : 'Vencimento'} type="date" bind:value={date} error={err('date')} />
 
-    <Select label={kind === 'transfer' ? 'Sai da conta' : 'Conta'} bind:value={accountId} options={accOpts} />
+  <Select label={kind === 'transfer' ? 'Sai da conta' : 'Conta'} bind:value={accountId} options={accOpts} />
 
-    {#if kind === 'transfer'}
-      <Select label="Entra na conta" bind:value={toAccountId} options={accOpts} error={err('to')} />
-    {:else}
-      <Select label="Categoria" bind:value={categoryId} options={catOpts} />
-      {#if !editing}
-        <Select label="Repetir" bind:value={repeat} options={REPEATS} />
-        {#if kind === 'expense' && repeat === 'none'}
-          <TextInput label="Parcelas" type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} />
-        {/if}
+  {#if kind === 'transfer'}
+    <Select label="Entra na conta" bind:value={toAccountId} options={accOpts} error={err('to')} />
+  {:else}
+    <Select label="Categoria" bind:value={categoryId} options={catOpts} />
+    {#if !editing}
+      <Select label="Repetir" bind:value={repeat} options={REPEATS} />
+      {#if kind === 'expense' && repeat === 'none'}
+        <TextInput label="Parcelas" type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} />
       {/if}
     {/if}
+  {/if}
 
-    {#if editing || (repeat === 'none' && installments <= 1)}
-      <div class="opt"><span id="{uid}-done">{doneLabel}</span><Switch bind:checked={done} labelledby="{uid}-done" /></div>
-    {/if}
-    {#if recurring}<p class="note">{tx.status === 'paid' ? 'Faz parte de uma repetição, mas já foi efetivado: a mudança vale só para este lançamento.' : 'Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.'}</p>{/if}
-
-    {#if error && !errField}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
-    <div class="actions">
-      <Button variant="secondary" onclick={onclose}>Cancelar</Button>
-      <Button type="submit" loading={busy}>{busy ? 'Salvando…' : 'Salvar'}</Button>
-    </div>
-  </form>
-</Sheet>
+  {#if editing || (repeat === 'none' && installments <= 1)}
+    <div class="opt"><span id="{uid}-done">{doneLabel}</span><Switch bind:checked={done} labelledby="{uid}-done" /></div>
+  {/if}
+  {#if recurring}<p class="note">{tx.status === 'paid' ? 'Faz parte de uma repetição, mas já foi efetivado: a mudança vale só para este lançamento.' : 'Faz parte de uma repetição: ao salvar, você escolhe quais lançamentos mudam.'}</p>{/if}
+</FormSheet>
 
 {#if askScope}
   <Scope verb="Salvar" onpick={pickScope} onclose={() => (askScope = false)} />
 {/if}
 
 <style>
-  form { display: flex; flex-direction: column; gap: var(--space-3); }
   .opt { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
   .note { margin: 0; font-size: var(--fs-1); color: var(--text-muted); }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 </style>

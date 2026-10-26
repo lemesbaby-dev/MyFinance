@@ -1,13 +1,13 @@
 <script>
   import Field from './Field.svelte';
   // options: [[valor, rótulo], ...]
-  let { label, help = '', error = '', value = $bindable(''), options = [], ...rest } = $props();
+  let { label, help = '', error = '', value = $bindable(''), options = [], disabled } = $props();
 </script>
 
 <Field {label} {help} {error}>
   {#snippet children(a)}
-    <select class="ui-input" bind:value {...a} {...rest}>
-      {#each options as [v, text] (v)}<option value={v}>{text}</option>{/each}
+    <select class="ui-input" onchange={(e) => (value = e.currentTarget.value)} id={a.id} aria-invalid={a['aria-invalid']} aria-describedby={a['aria-describedby']} {disabled}>
+      {#each options as [v, text] (v)}<option value={v} selected={v === value}>{text}</option>{/each}
     </select>
   {/snippet}
 </Field>

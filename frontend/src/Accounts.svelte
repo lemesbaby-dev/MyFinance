@@ -2,7 +2,7 @@
   import { app, saveAccount, deleteAccount } from './lib/app.svelte.js';
   import { balances, monthEnd, monthOf, todayISO } from './lib/finance.js';
   import { parseMoney } from './lib/format.js';
-  import Sheet from './ui/Sheet.svelte';
+  import FormSheet from './ui/FormSheet.svelte';
   import Card from './ui/Card.svelte';
   import Money from './ui/Money.svelte';
   import Badge from './ui/Badge.svelte';
@@ -10,7 +10,6 @@
   import IconButton from './ui/IconButton.svelte';
   import CategoryDot from './ui/CategoryDot.svelte';
   import EmptyState from './ui/EmptyState.svelte';
-  import Banner from './ui/Banner.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
   import Switch from './ui/Switch.svelte';
@@ -93,22 +92,14 @@
 </section>
 
 {#if form}
-  <Sheet title={form.id ? 'Editar conta' : 'Nova conta'} onclose={() => (form = null)}>
-    <form novalidate onsubmit={submit}>
-      <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
-      <Select label="Tipo" bind:value={form.type} options={TYPE_OPTS} />
-      <TextInput label="Saldo inicial (R$)" bind:value={form.balance} inputmode="decimal" error={errField === 'balance' ? error : ''} />
-      {#if form.id}
-        <div class="opt"><span id="{uid}-arq">Arquivada (some das listas e dos saldos)</span><Switch bind:checked={form.archived} labelledby="{uid}-arq" /></div>
-      {/if}
-      {#if error && !errField}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
-      <div class="actions">
-        <Button variant="secondary" onclick={() => (form = null)}>Cancelar</Button>
-        <Button type="submit" loading={busy}>Salvar</Button>
-      </div>
-      {#if form.id}<Button variant="danger" block onclick={remove} disabled={busy}>Excluir conta</Button>{/if}
-    </form>
-  </Sheet>
+  <FormSheet title={form.id ? 'Editar conta' : 'Nova conta'} onclose={() => (form = null)} onsubmit={submit} {busy} error={errField ? '' : error} onremove={form.id ? remove : undefined} removeLabel="Excluir conta">
+    <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
+    <Select label="Tipo" bind:value={form.type} options={TYPE_OPTS} />
+    <TextInput label="Saldo inicial (R$)" bind:value={form.balance} inputmode="decimal" error={errField === 'balance' ? error : ''} />
+    {#if form.id}
+      <div class="opt"><span id="{uid}-arq">Arquivada (some das listas e dos saldos)</span><Switch bind:checked={form.archived} labelledby="{uid}-arq" /></div>
+    {/if}
+  </FormSheet>
 {/if}
 
 <style>
@@ -121,7 +112,5 @@
   .t { font-weight: var(--fw-bold); color: var(--text-strong); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
   .m { margin-top: var(--space-1); font-size: var(--fs-1); font-weight: var(--fw-bold); color: var(--text-muted); }
   .acts { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: space-between; }
-  form { display: flex; flex-direction: column; gap: var(--space-3); }
   .opt { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 </style>

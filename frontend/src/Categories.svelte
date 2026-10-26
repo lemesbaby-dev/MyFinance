@@ -1,13 +1,12 @@
 <script>
   import { app, saveCategory, deleteCategory } from './lib/app.svelte.js';
-  import Sheet from './ui/Sheet.svelte';
+  import FormSheet from './ui/FormSheet.svelte';
   import Card from './ui/Card.svelte';
   import Badge from './ui/Badge.svelte';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
   import CategoryDot from './ui/CategoryDot.svelte';
   import EmptyState from './ui/EmptyState.svelte';
-  import Banner from './ui/Banner.svelte';
   import Icon from './ui/Icon.svelte';
   import Segmented from './ui/Segmented.svelte';
   import TextInput from './ui/TextInput.svelte';
@@ -81,23 +80,15 @@
 {/each}
 
 {#if form}
-  <Sheet title={form.id ? 'Editar categoria' : 'Nova categoria'} onclose={() => (form = null)}>
-    <form novalidate onsubmit={submit}>
-      {#if form.id}
-        <div><Badge tone="brand">{KINDS.find(([k]) => k === form.kind)?.[1]}</Badge></div>
-      {:else}
-        <Segmented label="Tipo" options={KINDS} bind:value={form.kind} onchange={() => (form.parent_id = '')} />
-      {/if}
-      <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
-      {#if !hasKids}<Select label="Dentro de" bind:value={form.parent_id} options={parentOpts} />{/if}
-      {#if error && !errField}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
-      <div class="actions">
-        <Button variant="secondary" onclick={() => (form = null)}>Cancelar</Button>
-        <Button type="submit" loading={busy}>Salvar</Button>
-      </div>
-      {#if form.id}<Button variant="danger" block onclick={remove} disabled={busy}>Excluir categoria</Button>{/if}
-    </form>
-  </Sheet>
+  <FormSheet title={form.id ? 'Editar categoria' : 'Nova categoria'} onclose={() => (form = null)} onsubmit={submit} {busy} error={errField ? '' : error} onremove={form.id ? remove : undefined} removeLabel="Excluir categoria">
+    {#if form.id}
+      <div><Badge tone="brand">{KINDS.find(([k]) => k === form.kind)?.[1]}</Badge></div>
+    {:else}
+      <Segmented label="Tipo" options={KINDS} bind:value={form.kind} onchange={() => (form.parent_id = '')} />
+    {/if}
+    <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
+    {#if !hasKids}<Select label="Dentro de" bind:value={form.parent_id} options={parentOpts} />{/if}
+  </FormSheet>
 {/if}
 
 <style>
@@ -108,6 +99,4 @@
   .sub { padding-left: var(--space-8); }
   .t { flex: 1; min-width: 0; font-weight: var(--fw-bold); color: var(--text-strong); }
   .sub .t { font-weight: var(--fw-medium); }
-  form { display: flex; flex-direction: column; gap: var(--space-3); }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
 </style>
