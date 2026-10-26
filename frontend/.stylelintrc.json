@@ -5,7 +5,8 @@
     "function-disallowed-list": ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color"],
     "declaration-property-value-disallowed-list": {
       "/^(color|background|background-color|border|border-.*-color|border-color|outline|outline-color|fill|stroke|box-shadow|text-shadow)$/": ["/(^| |,|[(])(white|black|red|green|blue|gray|grey|orange|yellow|purple|pink|brown|navy|teal|silver)($| |,|[)])/i"],
-      "/^font(-family)?$/": ["/['\"]|sans-serif|serif|monospace|system-ui|Arial|Helvetica/i"]
+      "/^font(-family)?$/": ["/['\"]|sans-serif|serif|monospace|system-ui|Arial|Helvetica/i"],
+      "/^(padding|margin|gap|row-gap|column-gap)(-.+)?$/": ["/(^|[\\s(,])-?[0-9]*\\.?[0-9]+(px|rem|em)\\b/"]
     }
   },
   "ignoreFiles": ["dist/**", "src/tokens.css", "src/fonts.css"]

@@ -20,7 +20,7 @@ Arquivos: `tokens.css` (3 camadas), `contraste.mjs` (mede WCAG + daltonismo; `no
 
 Novos sem equivalente hoje: `--brand`, `--brand-soft`, `--brand-strong`, `--on-brand`, `--color-overdue`, `--color-pending`, `--color-settled`, `--color-transfer` (+ `-soft`), `--cat-1..10`, `--money-{lg,md,sm}-*`, espaço/raio/z/movimento.
 
-Migração sugerida: manter aliases temporários (`--paper:var(--surface-page)` etc.) em `app.css` e remover após trocar os usos. `@media (prefers-color-scheme: dark)` do app.css é substituído pelos blocos do tokens.css; adicionar `data-theme` em `<html>` só se houver seletor manual de tema.
+Os aliases legados (`--paper`, `--ink`…) foram removidos de `app.css` na Fase 4: use sempre os semânticos. `@media (prefers-color-scheme: dark)` do app.css é substituído pelos blocos do tokens.css; adicionar `data-theme` em `<html>` só se houver seletor manual de tema.
 
 ## Valor monetário
 `lg` Fredoka 600 34px (hero/sheet), `md` Nunito 800 20px (cartões), `sm` Nunito 800 16px (linhas). Sempre `tabular-nums`, sinal explícito (+ / −): a cor sozinha não distingue receita de despesa.
@@ -59,4 +59,4 @@ Regra: o modo daltônico NÃO dispensa os outros canais. Glifo por categoria, si
 Observação: no claro+cvd a despesa (#6D1503) e o "previsto" ficam escuros (AA sobre creme exige); a separação vem de luminância/matiz, não de saturação.
 
 ## Implementação (Fase 1)
-`frontend/src/tokens.css` é a cópia ativa (importada em `main.js`); `tokens.css` desta pasta segue como insumo do `contraste.mjs` — alterou um, altere o outro. `npm run lint:css` (stylelint) barra cor literal (hex, rgb/hsl…, nomes) e `font-family` literal fora de `tokens.css`/`fonts.css`. **Pendência Fase 4:** espaçamento literal (padding/margin/gap em rem/px) ainda não é barrado — centenas de usos nas telas atuais; ligar a regra à medida que cada tela migrar.
+**Fonte única: `docs/design/tokens/tokens.css`** (é o que o `contraste.mjs` mede). Edite só ele e rode `npm run sync:tokens` em `frontend/` para atualizar a cópia `frontend/src/tokens.css` (importada em `main.js`, ignorada pelo stylelint); `npm test` falha se as duas divergirem. `npm run lint:css` (stylelint) barra, fora de `tokens.css`/`fonts.css`: cor literal (hex, rgb/hsl…, nomes), `font-family` literal e espaçamento literal (`padding`/`margin`/`gap` em px/rem/em — use `var(--space-N)`; `0` e `auto` passam).

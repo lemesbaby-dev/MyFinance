@@ -1,5 +1,5 @@
 /* =========================================================================
-   MyFinance — tokens da direção B (calorosa). RASCUNHO, não importado pelo app.
+   MyFinance — tokens da direção B (calorosa). Fonte da verdade; contrato de tema em docs/design/tokens/tokens.md.
    3 camadas: primitivos -> semânticos -> componente.
    Componentes só usam as camadas 2 e 3. Contraste verificado por contraste.mjs.
    Convenção do arquivo (o script depende dela): blocos :root sem indentação.
@@ -25,6 +25,7 @@
   /* categorias: Okabe-Ito estendida, 10 cores + glifo próprio (cor nunca é o único canal) */
   --cat-1:#0072B2; --cat-2:#BD8300; --cat-3:#009E73; --cat-4:#C972A2; --cat-5:#1D96DB;
   --cat-6:#D55E00; --cat-7:#9C920C; --cat-8:#7A5195; --cat-9:#8C6D31; --cat-10:#5B6770;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-dark); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
   --cat-ink-dark:#2A1F18; --cat-ink-light:#FFFFFF; /* glifo sobre a cor */
 
   /* espaçamento (grade 4px) */
@@ -105,6 +106,7 @@
     --brand-strong:var(--apricot-400);
     --cat-1:#0072B2; --cat-2:#E69F00; --cat-3:#009E73; --cat-4:#CC79A7; --cat-5:#56B4E9;
     --cat-6:#D55E00; --cat-7:#F0E442; --cat-8:#8558A2; --cat-9:#8C6D31; --cat-10:#606C76;
+    --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-dark); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
     --on-brand:var(--brown-900);
     --focus-ring:var(--indigo-300);
     --color-income:var(--green-300);    --color-income-soft:#17301F;
@@ -134,6 +136,7 @@
   --brand-strong:var(--apricot-400);
   --cat-1:#0072B2; --cat-2:#E69F00; --cat-3:#009E73; --cat-4:#CC79A7; --cat-5:#56B4E9;
   --cat-6:#D55E00; --cat-7:#F0E442; --cat-8:#8558A2; --cat-9:#8C6D31; --cat-10:#606C76;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-dark); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
   --on-brand:var(--brown-900);
   --focus-ring:var(--indigo-300);
   --color-income:var(--green-300);    --color-income-soft:#17301F;
@@ -154,6 +157,7 @@
 :root[data-cvd="on"] {
   --cat-1:#4B5016; --cat-2:#2D757D; --cat-3:#22A08D; --cat-4:#144752; --cat-5:#4A1C21;
   --cat-6:#A18F29; --cat-7:#141254; --cat-8:#BF364B; --cat-9:#D02FCD; --cat-10:#5C22A0;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-light); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-light); --cat-5-ink:var(--cat-ink-light); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-light); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
   --color-income:#0A6BA3;   --color-income-soft:#E2EDF4;
   --color-expense:#6D1503;  --color-expense-soft:#EDE3E1;
   --color-forecast:#480F61; --color-forecast-soft:#E9E2EC;
@@ -173,6 +177,7 @@
     --color-settled:#A2CEFD;  --color-settled-soft:#363333;
     --cat-1:#9F4C89; --cat-2:#ACE4EC; --cat-3:#A1B035; --cat-4:#7567DF; --cat-5:#BF7BA3;
     --cat-6:#4B9B70; --cat-7:#A6A8EC; --cat-8:#D02C2E; --cat-9:#E3E78E; --cat-10:#E7B9B1;
+    --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-light); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-dark); --cat-10-ink:var(--cat-ink-dark);
   }
 }
 :root[data-cvd="on"][data-theme="dark"] {
@@ -185,6 +190,7 @@
   --color-settled:#A2CEFD;  --color-settled-soft:#363333;
   --cat-1:#9F4C89; --cat-2:#ACE4EC; --cat-3:#A1B035; --cat-4:#7567DF; --cat-5:#BF7BA3;
   --cat-6:#4B9B70; --cat-7:#A6A8EC; --cat-8:#D02C2E; --cat-9:#E3E78E; --cat-10:#E7B9B1;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-light); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-dark); --cat-10-ink:var(--cat-ink-dark);
 }
 
 /* ---------- CAMADA 2 · tipografia semântica (valor monetário) ---------- */
@@ -212,6 +218,7 @@
   --sheet-radius:var(--radius-4); --sheet-z:var(--z-sheet);
   --field-bg:var(--surface-sunken); --field-radius:var(--radius-2); --field-h:var(--tap);
   --chip-radius:var(--radius-pill);
+  --tabbar-h:calc(var(--tap) + var(--space-3)); --menu-w:208px; --toast-bg:var(--text-strong); --toast-fg:var(--surface-page);
 }
 
 /* ---------- Movimento reduzido: durações viram ~0 ---------- */
