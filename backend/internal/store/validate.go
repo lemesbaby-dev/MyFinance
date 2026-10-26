@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-
-	"financas/internal/finance"
+	"time"
 )
 
 // Formato dos documentos sincronizados (ids são UUIDs gerados no app).
@@ -37,6 +36,8 @@ type recurrenceData struct {
 	StartDate   string  `json:"start_date"`
 	EndDate     *string `json:"end_date"`
 	Active      bool    `json:"active"`
+	// GeneratedUntil: até onde o app já gerou ocorrências (ocorrência excluída antes disso não volta).
+	GeneratedUntil *string `json:"generated_until"`
 }
 
 type transactionData struct {
@@ -187,20 +188,36 @@ func firstErr(errs ...error) error {
 	return nil
 }
 
+const maxInterval = 1000
+
+func parseDate(s string) (time.Time, error) { return time.ParseInLocation("2006-01-02", s, time.UTC) }
+
 func ruleErr(r recurrenceData) error {
-	start, err := finance.ParseDate(r.StartDate)
+	start, err := parseDate(r.StartDate)
 	if err != nil {
 		return errors.New("start_date inválido")
 	}
-	rule := finance.Rule{Frequency: finance.Frequency(r.Frequency), Interval: r.IntervalN, Start: start}
+	if !oneOf(r.Frequency, "daily", "weekly", "monthly", "yearly") {
+		return errors.New("frequência inválida")
+	}
+	if r.IntervalN < 1 || r.IntervalN > maxInterval {
+		return errors.New("interval_n deve estar entre 1 e 1000")
+	}
 	if r.EndDate != nil {
-		e, err := finance.ParseDate(*r.EndDate)
+		end, err := parseDate(*r.EndDate)
 		if err != nil {
 			return errors.New("end_date inválido")
 		}
-		rule.End = &e
+		if end.Before(start) {
+			return errors.New("data final anterior à inicial")
+		}
 	}
-	return rule.Validate()
+	if r.GeneratedUntil != nil {
+		if _, err := parseDate(*r.GeneratedUntil); err != nil {
+			return errors.New("generated_until inválido")
+		}
+	}
+	return nil
 }
 
 func txErr(t transactionData, ex exists) error {
@@ -215,14 +232,14 @@ func txErr(t transactionData, ex exists) error {
 	); err != nil {
 		return err
 	}
-	if _, err := finance.ParseDate(t.Date); err != nil {
+	if _, err := parseDate(t.Date); err != nil {
 		return errors.New("data inválida (use YYYY-MM-DD)")
 	}
 	if (t.Status == "paid") != (t.PaidAt != nil) {
 		return errors.New("paid_at deve existir se, e somente se, status for paid")
 	}
 	if t.PaidAt != nil {
-		if _, err := finance.ParseDate(*t.PaidAt); err != nil {
+		if _, err := parseDate(*t.PaidAt); err != nil {
 			return errors.New("paid_at inválido")
 		}
 	}

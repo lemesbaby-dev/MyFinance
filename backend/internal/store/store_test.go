@@ -136,3 +136,17 @@ func TestSyncOpsSoGuardaOk(t *testing.T) {
 		t.Errorf("sync_ops tem %d linhas, quero 1 (só a2; as recusadas não entram e a velha foi podada)", n)
 	}
 }
+
+func TestRecorrenciaGeneratedUntil(t *testing.T) {
+	st, uid := open(t)
+	st.Push(uid, []Op{acc("a1")})
+	rec := func(id, gu string) Op {
+		return Op{OpID: "op-" + id, Kind: "recurrence", ID: id, Action: "upsert", Data: json.RawMessage(
+			`{"kind":"expense","description":"x","amount_cents":1,"account_id":"a1","category_id":null,"frequency":"monthly",` +
+				`"interval_n":1,"start_date":"2026-10-01","end_date":null,"active":true,"generated_until":` + gu + `}`)}
+	}
+	res, _ := st.Push(uid, []Op{rec("r1", `"2027-10-15"`), rec("r2", `null`), rec("r3", `"2027-02-30"`)})
+	if res[0].Status != "ok" || res[1].Status != "ok" || res[2].Status != "rejected" {
+		t.Errorf("generated_until: %+v", res)
+	}
+}
