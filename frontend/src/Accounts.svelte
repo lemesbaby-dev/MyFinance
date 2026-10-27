@@ -1,7 +1,7 @@
 <script>
   import { app, saveAccount, deleteAccount } from './lib/app.svelte.js';
   import { balances, monthEnd, monthOf, todayISO } from './lib/finance.js';
-  import { parseMoney } from './lib/format.js';
+  import MoneyInput from './ui/MoneyInput.svelte';
   import FormSheet from './ui/FormSheet.svelte';
   import Card from './ui/Card.svelte';
   import Money from './ui/Money.svelte';
@@ -35,19 +35,17 @@
   const open = (a) => {
     error = ''; errField = '';
     form = a
-      ? { id: a.id, name: a.name, type: a.type, balance: (a.initial_balance_cents / 100).toFixed(2).replace('.', ','), archived: a.archived }
-      : { name: '', type: 'checking', balance: '0,00', archived: false };
+      ? { id: a.id, name: a.name, type: a.type, balance: a.initial_balance_cents, archived: a.archived }
+      : { name: '', type: 'checking', balance: 0, archived: false };
   };
 
   async function submit(e) {
     e.preventDefault();
-    const cents = parseMoney(form.balance);
     error = ''; errField = '';
-    if (cents === null) { error = 'Saldo inválido ou fora do limite. Exemplo: 1.250,00'; errField = 'balance'; return; }
     if (!form.name.trim()) { error = 'Informe o nome da conta.'; errField = 'name'; return; }
     busy = true;
     try {
-      await saveAccount(form.id ?? null, { name: form.name, type: form.type, initial_balance_cents: cents, archived: form.archived });
+      await saveAccount(form.id ?? null, { name: form.name, type: form.type, initial_balance_cents: form.balance, archived: form.archived });
       form = null;
     } catch (err) { error = err.message; } finally { busy = false; }
   }
@@ -96,7 +94,7 @@
   <FormSheet title={form.id ? 'Editar conta' : 'Nova conta'} onclose={() => (form = null)} onsubmit={submit} {busy} error={errField ? '' : error} onremove={form.id ? remove : undefined} removeLabel="Excluir conta">
     <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
     <Select label="Tipo" bind:value={form.type} options={TYPE_OPTS} />
-    <TextInput label="Saldo inicial (R$)" bind:value={form.balance} inputmode="decimal" error={errField === 'balance' ? error : ''} />
+    <MoneyInput label="Saldo inicial (R$)" bind:value={form.balance} signed help="Digite só os números; “-” alterna negativo" />
     {#if form.id}
       <div class="opt"><span id="{uid}-arq">Arquivada (some das listas e dos saldos)</span><Switch bind:checked={form.archived} labelledby="{uid}-arq" /></div>
     {/if}

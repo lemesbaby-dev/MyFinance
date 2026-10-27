@@ -13,3 +13,6 @@ export function moneyText(cents, kind = 'neutral', signed = true) {
 
 /** Digitação em centavos: só dígitos contam, o valor "entra pela direita". Aceita "R$ 1.234,56", "123456". Teto = 13 dígitos (< 1e14, igual ao servidor). */
 export const centsFromInput = (s) => parseInt(String(s).replace(/\D/g, '').slice(0, 13) || '0', 10);
+
+/** Aplica o sinal escolhido aos centavos digitados; zero nunca vira -0. */
+export const signCents = (cents, neg) => (neg && cents ? -cents : cents);

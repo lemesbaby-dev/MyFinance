@@ -1,17 +1,16 @@
 <script>
   import { app, saveAccount, saveCategory } from './lib/app.svelte.js';
-  import { parseMoney } from './lib/format.js';
   import Header from './ui/Header.svelte';
   import TextInput from './ui/TextInput.svelte';
+  import MoneyInput from './ui/MoneyInput.svelte';
   import Switch from './ui/Switch.svelte';
   import Button from './ui/Button.svelte';
   import Banner from './ui/Banner.svelte';
 
   let name = $state('Conta principal');
-  let balance = $state('0,00');
+  let balance = $state(0); // centavos
   let seed = $state(app.categories.length === 0);
   let error = $state('');
-  let errField = $state('');
   let busy = $state(false);
 
   const DEFAULTS = {
@@ -21,9 +20,7 @@
 
   async function start(e) {
     e.preventDefault();
-    const cents = parseMoney(balance);
-    errField = '';
-    if (cents === null) { error = 'Saldo inválido ou fora do limite. Exemplo: 1.250,00'; errField = 'balance'; return; }
+    const cents = balance;
     busy = true; error = '';
     try {
       await saveAccount(null, { name, type: 'checking', initial_balance_cents: cents });
@@ -37,9 +34,9 @@
   <p class="muted">Crie a conta onde seu dinheiro está hoje. O saldo inicial é o ponto de partida do cálculo. Funciona mesmo sem internet.</p>
   <form onsubmit={start}>
     <TextInput label="Nome da conta" bind:value={name} required />
-    <TextInput label="Saldo hoje (R$)" bind:value={balance} inputmode="decimal" required error={errField === 'balance' ? error : ''} />
+    <MoneyInput label="Saldo hoje (R$)" bind:value={balance} signed help="Digite só os números; “-” alterna negativo" />
     <div class="opt"><span id="seed-l">Criar categorias padrão (Moradia, Mercado, Salário…)</span><Switch bind:checked={seed} labelledby="seed-l" /></div>
-    {#if error && !errField}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
+    {#if error}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
     <Button type="submit" block loading={busy}>{busy ? 'Criando…' : 'Criar conta'}</Button>
   </form>
 </main>
