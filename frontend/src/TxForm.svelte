@@ -54,6 +54,7 @@
     if (!isValidISO(date)) throw bad('date', 'Data inválida. Use uma data entre 1900 e 2200.');
     if (!accountId) throw bad('', 'Crie uma conta primeiro (aba Contas).');
     if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) throw bad('to', 'Escolha uma conta de destino diferente.');
+    if (!editing && kind === 'expense' && repeat === 'none' && !(Number.isInteger(+installments) && installments >= 1 && installments <= MAX_INSTALLMENTS)) throw bad('installments', `Parcelas: informe de 1 a ${MAX_INSTALLMENTS}.`);
     const d = description.trim() || (kind === 'transfer' ? 'Transferência' : '');
     if (!d) throw bad('description', 'Informe a descrição.');
     return {
@@ -108,7 +109,7 @@
     {#if !editing}
       <Select label="Repetir" bind:value={repeat} options={REPEATS} />
       {#if kind === 'expense' && repeat === 'none'}
-        <TextInput label="Parcelas" type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} />
+        <TextInput label="Parcelas" type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} error={err('installments')} />
       {/if}
     {/if}
   {/if}

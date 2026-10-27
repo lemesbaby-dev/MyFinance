@@ -1,7 +1,7 @@
 // Roda public/sw.js num sandbox com Cache API falsa: o casco só é sobrescrito por HTML que cita /assets/.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import vm from 'node:vm';
 
 function load() {
@@ -54,6 +54,16 @@ test('sw: navegação com HTML do app entra no cache; portal cativo e não-HTML 
   assert.match(await sw.cache.get('/').clone().text(), /assets\/index-1/, 'JSON citando /assets/ também não entra');
 });
 
-test('sw: cache v4', () => {
-  assert.match(readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8'), /financas-shell-v4/);
+test('sw: cache v5', () => {
+  assert.match(readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8'), /financas-shell-v5/);
+});
+
+test('manifest: todo ícone existe em public/ e está no pré-cache do sw', () => {
+  const pub = (f) => new URL('../../public/' + f, import.meta.url);
+  const sw = readFileSync(pub('sw.js'), 'utf8');
+  const m = JSON.parse(readFileSync(pub('manifest.webmanifest'), 'utf8'));
+  for (const { src } of m.icons) {
+    assert.ok(existsSync(pub(src)), src);
+    assert.ok(sw.includes(`'${src}'`), `${src} fora do pré-cache`);
+  }
 });

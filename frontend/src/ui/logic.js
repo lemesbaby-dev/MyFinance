@@ -52,9 +52,14 @@ export function groupByDate(rows) {
   return out;
 }
 
-/** Cor (1..10) estável de uma categoria a partir do id: não há seletor de cor, o campo `color` do modelo fica intocado. */
-export function catOf(id) {
+/** Mapa id -> cor 1..9 por posição na lista de ids ordenada: até 9 categorias nunca repetem cor (10 fica para "Sem categoria"). O campo `color` do modelo fica intocado. */
+export const catMap = (ids) => new Map([...ids].sort().map((id, i) => [id, (i % 9) + 1]));
+
+/** Cor (1..9) de uma categoria pelo mapa de `catMap`; id fora do mapa cai num hash estável. */
+export function catOf(id, map) {
+  const n = map?.get(id);
+  if (n) return n;
   let h = 0;
   for (const c of String(id ?? '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return (h % 10) + 1;
+  return (h % 9) + 1;
 }

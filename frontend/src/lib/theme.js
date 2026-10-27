@@ -1,6 +1,5 @@
 // Tema e modo daltônico: só gravam preferência e põem data-theme / data-cvd no <html>; o CSS reage (tokens.css).
 // Mesma lógica do public/theme-init.js (que roda antes do CSS para não piscar).
-const LIGHT = '#FFF6EC', DARK = '#17110D'; // = --surface-page claro/escuro
 
 const read = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const write = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* sem storage: vale só nesta sessão */ } };
@@ -12,9 +11,12 @@ export function applyTheme(root = document.documentElement) {
   const t = getTheme();
   if (t === 'system') delete root.dataset.theme; else root.dataset.theme = t;
   if (getCvd()) root.dataset.cvd = 'on'; else delete root.dataset.cvd;
-  // barra do navegador: tema explícito vale nos dois <meta>; "sistema" devolve cada um ao seu media
-  for (const m of root.ownerDocument.querySelectorAll('meta[name="theme-color"]')) {
-    m.content = t === 'system' ? (/dark/.test(m.media) ? DARK : LIGHT) : t === 'dark' ? DARK : LIGHT;
+  // barra do navegador: tema explícito vale nos dois <meta> (cor lida do token --surface-page); "sistema" devolve cada um ao seu valor original
+  const metas = root.ownerDocument.querySelectorAll('meta[name="theme-color"]');
+  const page = metas.length ? getComputedStyle(root).getPropertyValue('--surface-page').trim() : '';
+  for (const m of metas) {
+    m.dataset.orig ??= m.content;
+    m.content = t === 'system' || !page ? m.dataset.orig : page;
   }
 }
 

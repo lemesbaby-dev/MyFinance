@@ -101,6 +101,8 @@ O app abre sem internet (service worker guarda o casco; os dados ficam no aparel
 O app guarda uma cópia local (IndexedDB) e calcula tudo offline (`frontend/src/lib/finance.js`); o servidor só autentica,
 valida e sincroniza. Detalhes em `docs/02-arquitetura-offline.md`.
 
+Design: tokens, componentes (`frontend/src/ui/`) e regras em `docs/design-system.md`; tom de voz em `docs/voz-e-microcopy.md`. Página de componentes só em dev: `npm run dev` e `#/design`.
+
 Testes: `cd backend && go test ./...` e `cd frontend && npm test` (node:test, sem dependências além de `fake-indexeddb`).
 
 Autenticação: `POST /api/auth/google` troca o ID token do Google por uma sessão; as demais rotas exigem `Authorization: Bearer <sessão>`. Todos os dados são isolados por usuário.

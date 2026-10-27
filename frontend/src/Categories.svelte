@@ -12,7 +12,7 @@
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
   import { confirmDialog } from './ui/confirm.js';
-  import { catOf } from './ui/logic.js';
+  import { catOf, catMap } from './ui/logic.js';
 
   const KINDS = [['expense', 'Despesas'], ['income', 'Receitas']];
   let form = $state(null); // { id?, name, kind, parent_id }
@@ -20,6 +20,7 @@
   let errField = $state('');
   let busy = $state(false);
 
+  const catColor = $derived(catMap(app.categories.map((c) => c.id)));
   const tops = (kind) => app.categories.filter((c) => c.kind === kind && !c.parent_id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const kids = (id) => app.categories.filter((c) => c.parent_id === id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   // 1 nível de subcategoria: só categorias principais do mesmo tipo (e nunca ela mesma) servem de mãe.
@@ -58,13 +59,13 @@
         <ul>
           {#each tops(kind) as c (c.id)}
             <li>
-              <CategoryDot n={catOf(c.id)} />
+              <CategoryDot n={catOf(c.id, catColor)} />
               <span class="t">{c.name}</span>
               <IconButton icon="edit" label="Editar {c.name}" tone="muted" onclick={() => open(c)} />
             </li>
             {#each kids(c.id) as k (k.id)}
               <li class="sub">
-                <CategoryDot n={catOf(k.id)} size="sm" />
+                <CategoryDot n={catOf(k.id, catColor)} size="sm" />
                 <span class="t">{k.name}</span>
                 <IconButton icon="edit" label="Editar {k.name}" tone="muted" onclick={() => open(k)} />
               </li>

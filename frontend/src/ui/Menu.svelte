@@ -22,6 +22,13 @@
   }
   function close(refocus = true) { open = false; if (refocus) trigger()?.focus(); }
   function pick(it) { close(); it.onselect?.(); }
+  // listener no window só enquanto aberto (um mês tem centenas de Menus)
+  $effect(() => {
+    if (!open) return;
+    const h = (e) => { if (!root.contains(e.target)) close(false); };
+    addEventListener('pointerdown', h);
+    return () => removeEventListener('pointerdown', h);
+  });
   function onTriggerKey(e) { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); show(); } }
   function onMenuKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return close(); }
@@ -33,7 +40,6 @@
   }
 </script>
 
-<svelte:window onpointerdown={(e) => open && !root.contains(e.target) && close(false)} />
 
 <div class="ui-menu" bind:this={root}>
   <IconButton {label} {icon} tone="muted" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? `${id}-m` : undefined} onclick={() => (open ? close() : show())} onkeydown={onTriggerKey} />

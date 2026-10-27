@@ -17,7 +17,7 @@
   import Button from './ui/Button.svelte';
   import Icon from './ui/Icon.svelte';
   import { confirmDialog } from './ui/confirm.js';
-  import { rowState, groupByDate, catOf } from './ui/logic.js';
+  import { rowState, groupByDate, catOf, catMap } from './ui/logic.js';
 
   const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const FILTERS = [['all', 'Todos'], ['pending', 'Pendentes'], ['paid', 'Efetivados']];
@@ -38,14 +38,22 @@
   const nowBal = $derived(balances(app.accounts, app.transactions, today, app.rejectedIds));
   const archived = $derived(new Set(app.accounts.filter((a) => a.archived).map((a) => a.id)));
   const view = $derived(monthView(app.transactions, month, filter, today, archived, app.rejectedIds));
-  // Quanto do movimento do mês já foi efetivado (trilha do hero); independe do filtro da lista.
-  const moved = (f) => { const v = monthView(app.transactions, month, f, today, archived, app.rejectedIds); return v.income_cents + v.expense_cents; };
-  const done = $derived(moved('paid'));
-  const todo = $derived(moved('pending'));
+  // Quanto do movimento do mês já foi efetivado (trilha do hero); independe do filtro da lista. Uma passada só.
+  const flow = $derived.by(() => {
+    const o = { paid: 0, pending: 0 };
+    for (const t of app.transactions) {
+      if (t.kind === 'transfer' || !(t.status in o) || archived.has(t.account_id) || app.rejectedIds.has(t.id) || monthOf(t.date) !== month) continue;
+      o[t.status] += t.amount_cents;
+    }
+    return o;
+  });
+  const done = $derived(flow.paid);
+  const todo = $derived(flow.pending);
+  const catColor = $derived(catMap(app.categories.map((c) => c.id)));
   const label = $derived(`${MONTHS[+month.slice(5, 7) - 1]} de ${month.slice(0, 4)}`.replace(/^./, (c) => c.toUpperCase()));
   const hasAccounts = $derived(app.accounts.some((a) => !a.archived));
   const days = $derived(groupByDate(view.rows));
-  const spending = $derived(view.spending.map((s) => ({ label: s.category_id ? catName(s.category_id) : 'Sem categoria', cents: s.cents, n: s.category_id ? catOf(s.category_id) : 10 })));
+  const spending = $derived(view.spending.map((s) => ({ label: s.category_id ? catName(s.category_id) : 'Sem categoria', cents: s.cents, n: s.category_id ? catOf(s.category_id, catColor) : 10 })));
 
   const accName = (id) => app.accounts.find((a) => a.id === id)?.name ?? '';
   const catName = (id) => app.categories.find((c) => c.id === id)?.name ?? '';
@@ -88,7 +96,7 @@
     cents={t.amount_cents}
     kind={t.kind}
     state={rowState({ paid: t.status === 'paid', date: t.date, today })}
-    cat={t.category_id ? catOf(t.category_id) : 0}
+    cat={t.category_id ? catOf(t.category_id, catColor) : 0}
     glyph={GLYPH[t.kind]}
     actionLabel={DO_LABEL[t.kind]}
     onaction={() => toggle(t)}

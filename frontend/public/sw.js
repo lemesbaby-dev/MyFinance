@@ -9,8 +9,8 @@
 //    não pode sobrescrever o casco do app).
 //  Mudou a lógica deste arquivo? Suba o número em CACHE: a ativação apaga os caches antigos.
 // ponytail: arquivos /assets/ de versões antigas ficam no cache até o próximo bump de CACHE (poucas centenas de KB).
-const CACHE = 'financas-shell-v4';
-const STATIC = ['/theme-init.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+const CACHE = 'financas-shell-v5';
+const STATIC = ['/theme-init.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png'];
 
 const refs = (text, re) => [...text.matchAll(re)].map((m) => m[1]);
 
