@@ -14,6 +14,24 @@
   import Segmented from './ui/Segmented.svelte';
   import Sheet from './ui/Sheet.svelte';
   import { confirmDialog } from './ui/confirm.js';
+  import Menu from './ui/Menu.svelte';
+  import ListRow from './ui/ListRow.svelte';
+  import ListGroup from './ui/ListGroup.svelte';
+  import Card from './ui/Card.svelte';
+  import Stat from './ui/Stat.svelte';
+  import CategoryDot from './ui/CategoryDot.svelte';
+  import CategoryBar from './ui/CategoryBar.svelte';
+  import ProgressBar from './ui/ProgressBar.svelte';
+  import BalanceHero from './ui/BalanceHero.svelte';
+  import Banner from './ui/Banner.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
+  import ErrorState from './ui/ErrorState.svelte';
+  import Skeleton from './ui/Skeleton.svelte';
+  import Toast from './ui/Toast.svelte';
+  import TabBar from './ui/TabBar.svelte';
+  import MonthNav from './ui/MonthNav.svelte';
+  import Header from './ui/Header.svelte';
+  import { toast } from './ui/toast.js';
 
   let cvd = $state(false);
   let sheet = $state(false);
@@ -46,6 +64,12 @@
   let cents = $state(123456);
   let text = $state('');
   let sel = $state('b');
+  let tab = $state('month');
+  let month = $state(9);
+  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const TABS = [['month', 'Mês', 'calendar'], ['accounts', 'Contas', 'wallet'], ['categories', 'Categorias', 'tag'], ['more', 'Mais', 'sliders']];
+  const CATS = [{ label: 'Mercado', cents: 84000, n: 1, glyph: 'cart' }, { label: 'Moradia', cents: 120000, n: 6, glyph: 'home' }, { label: 'Lazer', cents: 31000, n: 8, glyph: 'sun' }, { label: 'Saúde', cents: 12000, n: 3, glyph: 'leaf' }];
+  const MENU = [{ label: 'Editar', icon: 'edit', onselect: () => (last = 'Editar') }, { label: 'Desfazer', icon: 'undo', onselect: () => (last = 'Desfazer') }, { label: 'Excluir', icon: 'trash', danger: true, onselect: () => (last = 'Excluir') }];
 
   async function ask(danger) {
     last = String(await confirmDialog({ title: danger ? 'Excluir lançamento?' : 'Efetivar agora?', message: danger ? 'Esta ação não pode ser desfeita.' : 'O saldo atual será atualizado.', confirmLabel: danger ? 'Excluir' : 'Efetivar', danger }));
@@ -125,6 +149,70 @@
           <label class="opt"><Switch checked disabled label="Desabilitado" /> <span>Desabilitado</span></label>
           <Segmented label="Tema" options={THEMES} bind:value={seg} />
         </div>
+
+        <h2>Compostos</h2>
+        <h3>Header + MonthNav</h3>
+        <div class="stack">
+          <Header hello="Oi, Josias" title="Mês"><IconButton icon="plus" label="Novo lançamento" tone="brand" /></Header>
+          <MonthNav label="{MESES[month]} de 2026" onprev={() => (month = (month + 11) % 12)} onnext={() => (month = (month + 1) % 12)} />
+        </div>
+
+        <h3>Banner</h3>
+        <div class="stack">
+          <Banner icon="cloud-off" detail="Tudo fica salvo aqui. 2 lançamentos esperando para enviar.">Você está offline</Banner>
+          <Banner tone="warn" icon="alert" detail="Toque para ver e corrigir.">1 lançamento foi recusado</Banner>
+          <Banner tone="danger" icon="alert">Não foi possível salvar</Banner>
+          <Banner icon="refresh">Sincronizando…{#snippet action()}<Button size="sm" variant="secondary">Ver</Button>{/snippet}</Banner>
+        </div>
+
+        <h3>BalanceHero</h3>
+        <div class="stack">
+          <BalanceHero now={523450} forecast={318020} done={420000} todo={310000} />
+          <BalanceHero now={-12000} forecast={88000} done={0} todo={100000} />
+        </div>
+
+        <h3>Card e Stat</h3>
+        <div class="stack">
+          <Card><div class="row2"><Stat label="Receitas" cents={850000} kind="income" /><Stat label="Despesas" cents={420000} kind="expense" /></div></Card>
+          <Card tone="brand"><Stat label="Total nas contas" cents={523450} size="lg" /></Card>
+        </div>
+
+        <h3>ListGroup + ListRow + Menu</h3>
+        <div class="stack">
+          <ListGroup title="Atrasados" note="1 item">
+            <ListRow title="Internet" meta="Banco · mensal" cents={11990} state="overdue" cat={5} glyph="wifi" actionLabel="Efetivar" onaction={() => (last = 'Efetivar Internet')} menu={MENU} />
+          </ListGroup>
+          <ListGroup title="Hoje" today note="2 itens">
+            <ListRow title="Salário" meta="Carteira" cents={650000} kind="income" state="pending" cat={3} glyph="coin" actionLabel="Recebi" onaction={() => (last = 'Recebi Salário')} menu={MENU} />
+            <ListRow title="Mercado do bairro com um nome bem comprido para testar corte" meta="Cartão" cents={24590} state="paid" cat={1} glyph="cart" menu={MENU} />
+          </ListGroup>
+        </div>
+
+        <h3>Menu e CategoryDot</h3>
+        <div class="row"><Menu label="Mais ações" items={MENU} />{#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as n (n)}<CategoryDot {n} glyph="tag" />{/each}</div>
+
+        <h3>CategoryBar e ProgressBar</h3>
+        <div class="stack">
+          <CategoryBar items={CATS} />
+          <ProgressBar value={3} max={4} label="75% concluído" />
+        </div>
+
+        <h3>EmptyState, ErrorState, Skeleton</h3>
+        <div class="stack">
+          <EmptyState title="Nada por aqui ainda" text="Quando você lançar algo neste mês, aparece aqui." actionLabel="Novo lançamento" />
+          <ErrorState text="Confira a conexão e tente de novo." onretry={() => (last = 'retry')} />
+          <Skeleton count={2} />
+        </div>
+
+        <h3>Toast</h3>
+        <div class="stack">
+          <Toast msg="Lançamento salvo" tone="ok" />
+          <Toast msg="Excluído" actionLabel="Desfazer" />
+          <div class="row"><Button size="sm" variant="secondary" onclick={() => { toast('Primeiro aviso'); toast('Segundo, na fila', { tone: 'warn' }); }}>toast() x2</Button></div>
+        </div>
+
+        <h3>TabBar</h3>
+        <TabBar tabs={TABS} value={tab} onselect={(id) => (tab = id)} />
       </section>
     {/each}
   </div>
@@ -162,6 +250,7 @@
   .pane { background: var(--surface-page); color: var(--text-body); border: var(--bw-1) solid var(--border-subtle); border-radius: var(--radius-3); padding: var(--space-4); min-width: 0; }
   .row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
   .stack { display: flex; flex-direction: column; gap: var(--space-3); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
   .line { display: flex; justify-content: space-between; align-items: center; min-height: var(--tap); }
   .opt { display: flex; align-items: center; gap: var(--space-2); }
   .sw { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: var(--space-2); font-size: var(--fs-1); }
