@@ -5,3 +5,4 @@ backend/*.db-wal
 backend/*.db-shm
 backend/financas
 *.keystore
+deploy/.env
