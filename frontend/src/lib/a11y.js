@@ -4,7 +4,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 
 export function dialog(node, onclose) {
   const opener = document.activeElement;
-  (node.querySelector('input, select, textarea') ?? node.querySelector('button:not([disabled])'))?.focus();
+  (node.querySelector('[data-autofocus]') ?? node.querySelector('input, select, textarea') ??node.querySelector('button:not([disabled])'))?.focus();
   const key = (e) => {
     if (e.key === 'Escape') return onclose();
     if (e.key !== 'Tab') return;
