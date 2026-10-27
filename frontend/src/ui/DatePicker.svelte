@@ -12,10 +12,10 @@
   const KEYS = { ArrowLeft: (c) => addDays(c, -1), ArrowRight: (c) => addDays(c, 1), ArrowUp: (c) => addDays(c, -7), ArrowDown: (c) => addDays(c, 7), PageUp: (c) => addMonths(c, -1), PageDown: (c) => addMonths(c, 1) };
   const longDate = (d) => `${+d.slice(8)} de ${MONTHS[+d.slice(5, 7) - 1]} de ${d.slice(0, 4)}`;
   let open = $state(false);
-  let up = $state(false);
+  let pos = $state('');
   let cur = $state(''); // data com foco no grid
   let root;
-  const today = $derived(todayISO());
+  let today = $state(todayISO()); // recalculado ao abrir
   const month = $derived(monthOf(cur || today));
   const grid = $derived(monthGrid(month));
   const monthLabel = $derived(`${MONTHS[+month.slice(5, 7) - 1]} de ${month.slice(0, 4)}`);
@@ -25,10 +25,13 @@
   function move(fn) { try { cur = fn(cur); } catch { /* fora de 1900..2200: ignora */ } focusCur(); }
 
   async function show() {
+    today = todayISO();
     cur = isValidISO(value) ? value : today;
     open = true;
     await tick();
-    up = menuSide(trigger().getBoundingClientRect(), root.querySelector('[role="dialog"]').offsetHeight, innerHeight) === 'up';
+    const r = trigger().getBoundingClientRect();
+    const up = menuSide(r, root.querySelector('[role="dialog"]').offsetHeight, innerHeight) === 'up';
+    pos = `left:${r.left}px;width:${r.width}px;${up ? `bottom:${innerHeight - r.top + 4}px` : `top:${r.bottom + 4}px`}`; // fixed: não é cortado pelo overflow da Sheet
     focusCur();
   }
   function close(refocus = true) { open = false; if (refocus) trigger()?.focus(); }
@@ -36,8 +39,11 @@
   $effect(() => {
     if (!open) return;
     const h = (e) => { if (!root.contains(e.target)) close(false); };
+    const s = (e) => { if (!root.contains(e.target)) close(false); }; // rolagem/resize da página: o popup fixed ficaria solto
     addEventListener('pointerdown', h);
-    return () => removeEventListener('pointerdown', h);
+    addEventListener('scroll', s, true);
+    addEventListener('resize', s);
+    return () => { removeEventListener('pointerdown', h); removeEventListener('scroll', s, true); removeEventListener('resize', s); };
   });
   function onTriggerKey(e) { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); show(); } }
   function onKey(e) {
@@ -56,7 +62,7 @@
         <span>{shown || 'Escolha a data'}</span><Icon name="calendar" />
       </button>
       {#if open}
-        <div class="pop" class:up role="dialog" tabindex="-1" aria-label="Escolher data" onkeydown={onKey}>
+        <div class="pop" style={pos} data-popup role="dialog" tabindex="-1" aria-label="Escolher data" onkeydown={onKey}>
           <div class="head">
             <button type="button" class="nav" aria-label="Mês anterior" onclick={() => move((c) => addMonths(c, -1))}><Icon name="left" /></button>
             <span class="mlabel" aria-live="polite">{monthLabel}</span>
@@ -64,8 +70,9 @@
           </div>
           <div class="grid">
             {#each WEEK as w, i (i)}<span class="wd" aria-hidden="true">{w}</span>{/each}
-            {#each grid as d (d)}
-              <button type="button" class="day" data-d={d} class:out={monthOf(d) !== month} class:sel={d === value} class:today={d === today} tabindex={d === cur ? 0 : -1} aria-pressed={d === value} aria-label={longDate(d)} onclick={() => pick(d)}>{+d.slice(8)}</button>
+            {#each grid as d, i (i)}
+            {#if d === null}<span aria-hidden="true"></span>{:else}
+              <button type="button" class="day" data-d={d} class:out={monthOf(d) !== month} class:sel={d === value} class:today={d === today} tabindex={d === cur ? 0 : -1} aria-pressed={d === value} aria-label={longDate(d)} onclick={() => pick(d)}>{+d.slice(8)}</button>{/if}
             {/each}
           </div>
           <div class="foot"><button type="button" class="link" onclick={() => pick(today)}>Hoje</button></div>
@@ -82,8 +89,7 @@
   .trg.bad { border-color: var(--color-expense); background: var(--surface-raised); }
   .trg:disabled { opacity: 0.5; }
   .trg:focus-visible, .trg[aria-expanded='true'] { outline: var(--bw-2) solid var(--focus-ring); outline-offset: 0; border-color: var(--focus-ring); }
-  .pop { position: absolute; left: 0; right: 0; top: 100%; margin-top: var(--space-1); z-index: var(--z-sticky); padding: var(--space-3); background: var(--surface-raised); border: var(--bw-1) solid var(--border-strong); border-radius: var(--radius-2); box-shadow: var(--shadow-lift); display: flex; flex-direction: column; gap: var(--space-2); }
-  .pop.up { top: auto; bottom: 100%; margin: 0 0 var(--space-1); }
+  .pop { position: fixed; z-index: var(--z-sticky); padding: var(--space-3); background: var(--surface-raised); border: var(--bw-1) solid var(--border-strong); border-radius: var(--radius-2); box-shadow: var(--shadow-lift); display: flex; flex-direction: column; gap: var(--space-2); }
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
   .mlabel { font: var(--fw-bold) var(--fs-3) var(--font-text); color: var(--text-strong); }
   .mlabel::first-letter { text-transform: uppercase; }

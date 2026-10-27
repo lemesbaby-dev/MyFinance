@@ -39,6 +39,16 @@ test('monthGrid: 42 dias, começa no domingo, contém o mês inteiro', () => {
   assert.equal(monthGrid('2026-02')[0], '2026-02-01'); // 01/02/2026 é domingo: sem dias do mês anterior
 });
 
+test('monthGrid: extremos 1900-01 e 2200-12 não lançam; vizinhos fora do intervalo viram null', () => {
+  const a = monthGrid('1900-01'); // 01/01/1900 é segunda: domingo anterior é 1899
+  assert.equal(a.length, 42);
+  assert.equal(a[0], null);
+  assert.equal(a[1], '1900-01-01');
+  const b = monthGrid('2200-12'); // sábado 1 + 41 dias entram em 2201
+  assert.equal(b.length, 42);
+  assert.ok(b.includes('2200-12-31') && b.at(-1) === null);
+});
+
 test('Confirm: resolve true/false; sem host nega', async () => {
   let last;
   const off = registerConfirmHost((opts, resolve) => { last = { opts, resolve }; });

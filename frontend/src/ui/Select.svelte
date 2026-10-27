@@ -7,7 +7,7 @@
   // Teclado: Enter/Espaço/↓ abrem; ↑↓ Home End navegam; Enter/Espaço escolhe; Escape fecha e devolve o foco; Tab fecha.
   let { label, help = '', error = '', value = $bindable(''), options = [], disabled } = $props();
   let open = $state(false);
-  let up = $state(false);
+  let pos = $state('');
   let root;
   const current = $derived(options.find(([v]) => v === value));
   const trigger = () => root.querySelector('button[aria-haspopup]');
@@ -17,7 +17,9 @@
     open = true;
     await tick();
     const list = root.querySelector('[role="listbox"]');
-    up = menuSide(trigger().getBoundingClientRect(), list.offsetHeight, innerHeight) === 'up';
+    const r = trigger().getBoundingClientRect();
+    const up = menuSide(r, list.offsetHeight, innerHeight) === 'up';
+    pos = `left:${r.left}px;width:${r.width}px;${up ? `bottom:${innerHeight - r.top + 4}px` : `top:${r.bottom + 4}px`}`; // fixed: não é cortado pelo overflow da Sheet
     (root.querySelector('[aria-selected="true"]') ?? entries()[0])?.focus();
   }
   function close(refocus = true) { open = false; if (refocus) trigger()?.focus(); }
@@ -25,8 +27,11 @@
   $effect(() => {
     if (!open) return;
     const h = (e) => { if (!root.contains(e.target)) close(false); };
+    const s = (e) => { if (!root.contains(e.target)) close(false); }; // rolagem/resize da página: o popup fixed ficaria solto
     addEventListener('pointerdown', h);
-    return () => removeEventListener('pointerdown', h);
+    addEventListener('scroll', s, true);
+    addEventListener('resize', s);
+    return () => { removeEventListener('pointerdown', h); removeEventListener('scroll', s, true); removeEventListener('resize', s); };
   });
   function onTriggerKey(e) { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); show(); } }
   function onListKey(e) {
@@ -43,11 +48,11 @@
 <Field {label} {help} {error}>
   {#snippet children(a)}
     <div class="ui-select" bind:this={root}>
-      <button type="button" class="trg" class:bad={!!error} id={a.id} aria-haspopup="listbox" aria-expanded={open} aria-describedby={a['aria-describedby']} {disabled} onclick={() => (open ? close() : show())} onkeydown={onTriggerKey}>
+      <button type="button" class="trg" class:bad={!!error} id={a.id} aria-haspopup="listbox" aria-expanded={open} aria-describedby={a['aria-describedby']} {disabled} onclick={() => (open ? close() : show())} onkeydown={onTriggerKey} onkeyup={(e) => e.key === ' ' && e.preventDefault()}>
         <span class="txt">{current?.[1] ?? ''}</span><Icon name="down" />
       </button>
       {#if open}
-        <div class="pop" class:up role="listbox" aria-labelledby={a.id} tabindex="-1" onkeydown={onListKey}>
+        <div class="pop" style={pos} data-popup role="listbox" aria-label={label} tabindex="-1" onkeydown={onListKey}>
           {#each options as [v, text] (v)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div role="option" tabindex="-1" aria-selected={v === value} onclick={() => pick(v)}>{text}{#if v === value}<Icon name="check" />{/if}</div>
@@ -66,8 +71,7 @@
   .trg.bad { border-color: var(--color-expense); background: var(--surface-raised); }
   .trg:disabled { opacity: 0.5; }
   .trg:focus-visible, .trg[aria-expanded='true'] { outline: var(--bw-2) solid var(--focus-ring); outline-offset: 0; border-color: var(--focus-ring); }
-  .pop { position: absolute; left: 0; right: 0; top: 100%; margin-top: var(--space-1); z-index: var(--z-sticky); max-height: 16rem; overflow-y: auto; padding: var(--space-1); background: var(--surface-raised); border: var(--bw-1) solid var(--border-strong); border-radius: var(--radius-2); box-shadow: var(--shadow-lift); }
-  .pop.up { top: auto; bottom: 100%; margin: 0 0 var(--space-1); }
+  .pop { position: fixed; z-index: var(--z-sticky); max-height: 16rem; overflow-y: auto; padding: var(--space-1); background: var(--surface-raised); border: var(--bw-1) solid var(--border-strong); border-radius: var(--radius-2); box-shadow: var(--shadow-lift); }
   [role='option'] { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--tap); padding: 0 var(--space-3); border-radius: var(--radius-1); color: var(--text-body); font: var(--fw-bold) var(--fs-2) var(--font-text); cursor: pointer; }
   [role='option']:hover, [role='option']:focus-visible { background: var(--surface-sunken); }
   [role='option']:focus-visible { outline: var(--bw-2) solid var(--focus-ring); outline-offset: calc(var(--bw-2) * -1); }
