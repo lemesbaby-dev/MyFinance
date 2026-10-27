@@ -27,6 +27,14 @@
   let error = $state('');
   let blocked = $state(false); // sobraram alterações não enviadas de outra conta neste aparelho
   let forceFirst = $state(false);
+  // Fila de envio só vira aviso se demorar: o envio normal (1,5 s + rede) não pisca o banner.
+  let slowSync = $state(false);
+  $effect(() => {
+    if (!app.status.pending) { slowSync = false; return; }
+    const t = setTimeout(() => (slowSync = true), 8000);
+    return () => clearTimeout(t);
+  });
+  const pend = $derived(slowSync ? app.status.pending : 0);
   let Design = $state(null); // /design: só em dev; o import dinâmico some do build de produção (DEV vira false)
   if (import.meta.env.DEV && location.hash === '#/design') import('./Design.svelte').then((m) => (Design = m.default));
 
@@ -133,11 +141,11 @@
 {:else}
   <div class="shell">
     <main>
-      {#if !app.status.online || app.status.offline || app.status.pending || app.status.rejected || app.status.error}
+      {#if !app.status.online || app.status.offline || pend || app.status.rejected || app.status.error}
         <Banner tone={app.status.rejected || (app.status.error && app.status.online && !app.status.offline) ? 'warn' : 'info'} icon={!app.status.online || app.status.offline ? 'cloud-off' : app.status.error ? 'alert' : 'refresh'}>
-          {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else if app.status.pending}Enviando alterações…{/if}
-          {#if app.status.pending} · {app.status.pending} por enviar{/if}
-          {#if app.status.rejected}{#if !app.status.online || app.status.offline || app.status.error || app.status.pending} · {/if}<strong>{app.status.rejected} recusado(s) pelo servidor</strong> (veja em Mais){/if}
+          {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else if pend}Enviando alterações…{/if}
+          {#if pend} · {pend} por enviar{/if}
+          {#if app.status.rejected}{#if !app.status.online || app.status.offline || app.status.error || pend} · {/if}<strong>{app.status.rejected} recusado(s) pelo servidor</strong> (veja em Mais){/if}
         </Banner>
       {/if}
       <Header title={TABS.find(([k]) => k === tab)[1]} />
