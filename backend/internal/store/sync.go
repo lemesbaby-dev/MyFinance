@@ -290,3 +290,46 @@ func (s *Store) Export(uid string) ([]Change, error) {
 	}
 	return out, rows.Err()
 }
+
+// Reset exclui (tombstone) todos os documentos vivos do usuário, mantendo a conta: os outros aparelhos
+// recebem as exclusões no próximo pull e voltam ao estado de recém-cadastrado.
+func (s *Store) Reset(uid string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var rev int64
+	if err := tx.QueryRow(`SELECT rev FROM users WHERE id=?`, uid).Scan(&rev); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT kind,id FROM entities WHERE user_id=? AND deleted_at IS NULL`, uid)
+	if err != nil {
+		return err
+	}
+	type key struct{ kind, id string }
+	var live []key
+	for rows.Next() {
+		var k key
+		if err := rows.Scan(&k.kind, &k.id); err != nil {
+			rows.Close()
+			return err
+		}
+		live = append(live, k)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range live { // rev único por linha: o pull pagina por rev e empate pularia itens
+		rev++
+		if _, err := tx.Exec(`UPDATE entities SET deleted_at=datetime('now'), rev=?, data='{}' WHERE user_id=? AND kind=? AND id=?`,
+			rev, uid, k.kind, k.id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`UPDATE users SET rev=?, rows_n=0, bytes_n=0 WHERE id=?`, rev, uid); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

@@ -57,5 +57,6 @@ export const api = {
   pull: (since) => call('GET', `/api/sync?since=${since}`),
   logout: () => call('POST', '/api/auth/logout', {}),
   exportData: () => call('GET', '/api/export?format=json'),
+  resetData: () => call('POST', '/api/reset', {}),
   deleteAccount: (confirm_email) => call('DELETE', '/api/account', { confirm_email }),
 };

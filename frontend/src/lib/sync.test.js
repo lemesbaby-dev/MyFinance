@@ -304,3 +304,18 @@ test('applyChanges confere a geração dentro da transação', async () => {
   assert.equal((await db.list('account')).length, 0);
   assert.equal(await db.getMeta('cursor'), null);
 });
+
+test('resetLocal limpa dados, fila, recusados e cursor, mas mantém usuário e synced', async () => {
+  await db.setMeta('user', 'u1');
+  await db.setMeta('synced', true);
+  await db.setMeta('cursor', 7);
+  await db.setMeta('rejected', [{ kind: 'account', id: 'r', action: 'upsert' }]);
+  await db.save('account', uuidv7(), acc);
+  await db.resetLocal();
+  assert.equal((await db.list('account')).length, 0);
+  assert.equal(await db.pending(), 0);
+  assert.equal(await db.unsent(), 0);
+  assert.equal(await db.getMeta('cursor'), null);
+  assert.equal(await db.getMeta('user'), 'u1');
+  assert.equal(await db.getMeta('synced'), true);
+});

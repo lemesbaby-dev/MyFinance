@@ -4,7 +4,7 @@
   import * as db from './lib/db.js';
   import * as session from './lib/session.js';
   import { sync } from './lib/sync.js';
-  import { app, init, idle, clearApp } from './lib/app.svelte.js';
+  import { app, init, idle, clearApp, reload } from './lib/app.svelte.js';
   import Login from './Login.svelte';
   import FirstRun from './FirstRun.svelte';
   import Month from './Month.svelte';
@@ -84,6 +84,16 @@
     needLogin = true;
   }
 
+  async function resetData() {
+    await sync().catch(() => {}); // esvazia a fila antes: uma op enviada depois do reset recriaria dados
+    await api.resetData(); // sem rede: erro volta para a tela
+    await idle();
+    await db.resetLocal();
+    forceFirst = false;
+    await reload();
+    sync().catch(() => {});
+  }
+
   async function deleteAccount(email) {
     await api.deleteAccount(email); // o servidor confere o e-mail; erro volta para o formulário
     clearSession();
@@ -137,7 +147,7 @@
       {#if tab === 'month'}<Month />
       {:else if tab === 'accounts'}<Accounts />
       {:else if tab === 'categories'}<Categories />
-      {:else}<More onlogout={logout} ondelete={deleteAccount} />{/if}
+      {:else}<More onlogout={logout} ondelete={deleteAccount} onreset={resetData} />{/if}
     </main>
     <div class="tabs"><TabBar label="Seções" tabs={tabbed} value={tab} onselect={(k) => (tab = k)} /></div>
   </div>
