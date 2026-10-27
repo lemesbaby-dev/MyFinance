@@ -53,6 +53,14 @@ export function addDays(iso, n) {
 }
 
 export const monthOf = (iso) => iso.slice(0, 7);
+
+/** Grade de calendário de um mês ("YYYY-MM"): 42 datas ISO, semanas de domingo a sábado, com dias dos meses vizinhos. */
+export function monthGrid(month) {
+  const first = month + '-01';
+  const { y, m } = parseISO(first);
+  const start = addDays(first, -new Date(Date.UTC(y, m - 1, 1)).getUTCDay());
+  return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+}
 export const monthStart = (month) => month + '-01';
 export const monthEnd = (month) => ymd(+month.slice(0, 4), +month.slice(5, 7), daysIn(+month.slice(0, 4), +month.slice(5, 7)));
 export const shiftMonth = (month, n) => monthOf(addMonths(monthStart(month), n));
