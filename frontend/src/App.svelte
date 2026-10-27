@@ -133,7 +133,7 @@
 {:else}
   <div class="shell">
     <main>
-      {#if !app.status.online || app.status.offline || app.status.pending || app.status.rejected || app.status.error}
+      {#if !app.status.online || app.status.offline || app.status.rejected || app.status.error}
         <Banner tone={app.status.rejected || (app.status.error && app.status.online && !app.status.offline) ? 'warn' : 'info'} icon={!app.status.online || app.status.offline ? 'cloud-off' : app.status.error ? 'alert' : 'refresh'}>
           {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else if app.status.pending}Enviando alterações…{/if}
           {#if app.status.pending} · {app.status.pending} por enviar{/if}
