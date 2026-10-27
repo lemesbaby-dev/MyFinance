@@ -65,6 +65,8 @@
   .logo { border-radius: var(--radius-2); box-shadow: var(--shadow-soft); margin-bottom: var(--space-2); }
   main :global(h1) { font-size: var(--fs-6); }
   .lead { font: var(--fw-medium) var(--fs-3)/var(--lh-body) var(--font-text); color: var(--text-body); }
-  .gbtn { width: 100%; margin: var(--space-4) 0 var(--space-2); min-height: var(--tap); display: flex; justify-content: center; }
+  /* O botão do Google é um iframe de documento claro: com o app em color-scheme dark o navegador pinta um
+     fundo branco opaco atrás dele. Declarar light aqui deixa o iframe transparente. */
+  .gbtn { width: 100%; margin: var(--space-4) 0 var(--space-2); min-height: var(--tap); display: flex; justify-content: center; color-scheme: light; }
   .note { font: var(--fw-medium) var(--fs-2)/var(--lh-body) var(--font-text); color: var(--text-muted); }
 </style>
