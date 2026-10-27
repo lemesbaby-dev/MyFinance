@@ -46,10 +46,14 @@ find "$OUT" -maxdepth 1 -name 'financas-*.db*' -type f -mtime +"$KEEP_DAYS" -del
 # --- envio para fora da VM: S3 (ex.: Contabo Object Storage) via rclone em container ---
 # Defina S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY no ambiente do cron. Sem S3_BUCKET, só guarda local.
 if [ -n "${S3_BUCKET:-}" ]; then
-  docker run --rm -v "$OUT:/b:ro" \
+  rc() { docker run --rm -v "$OUT:/b:ro" \
     -e RCLONE_CONFIG_S3_TYPE=s3 -e RCLONE_CONFIG_S3_PROVIDER=Other -e RCLONE_CONFIG_S3_ENDPOINT="$S3_ENDPOINT" \
     -e RCLONE_CONFIG_S3_ACCESS_KEY_ID="$S3_ACCESS_KEY_ID" -e RCLONE_CONFIG_S3_SECRET_ACCESS_KEY="$S3_SECRET_ACCESS_KEY" \
-    rclone/rclone:1.69 copy /b "S3:$S3_BUCKET/financas" --max-age 48h --include 'financas-*.db'
+    rclone/rclone:1.69 "$@"; }
+  rc copy /b "S3:$S3_BUCKET/financas" --max-age 48h --include 'financas-*.db'
+  # só diz "enviado" se o arquivo de agora realmente está no bucket (não confia só no código de saída)
+  [ "$(rc lsf "S3:$S3_BUCKET/financas/$(basename "$dest")" 2>/dev/null)" = "$(basename "$dest")" ] \
+    || { echo "FALHA: $(basename "$dest") não apareceu em s3://$S3_BUCKET/financas" >&2; exit 1; }
   echo "enviado para s3://$S3_BUCKET/financas"
 fi
 # --- alternativas (descomente um) ---
