@@ -85,10 +85,11 @@
   }
 
   async function resetData() {
-    await sync().catch(() => {}); // esvazia a fila antes: uma op enviada depois do reset recriaria dados
-    await api.resetData(); // sem rede: erro volta para a tela
+    const r = await sync(); // a fila precisa chegar ao servidor antes: o que ficar para trás seria recriado depois do reset
+    if (!r.ok) throw new Error(r.offline ? 'Sem conexão com o servidor.' : `Não deu para sincronizar antes de apagar: ${r.error}`);
+    await api.resetData();
+    await db.resetLocal(); // logo em seguida (e sobe a geração): nenhum sync em andamento grava ou envia o que sobrou
     await idle();
-    await db.resetLocal();
     forceFirst = false;
     await reload();
     sync().catch(() => {});

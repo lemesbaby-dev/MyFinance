@@ -61,7 +61,7 @@
   }
 
   async function resetData() {
-    if (!(await confirmDialog({ title: 'Começar do zero?', message: 'Apaga todas as suas contas, categorias, recorrências e lançamentos, neste aparelho e no servidor, e não tem volta. Sua conta de acesso continua. Se quiser guardar uma cópia, exporte seus dados antes.', danger: true, confirmLabel: 'Apagar tudo' }))) return;
+    if (!(await confirmDialog({ title: 'Começar do zero?', message: 'Apaga todas as suas contas, categorias, recorrências e lançamentos, neste aparelho e no servidor, e não tem volta. Sua conta de acesso continua. Outro aparelho com alterações ainda não enviadas pode recriar parte dos dados quando voltar a ficar online: sincronize os demais antes. Se quiser guardar uma cópia, exporte seus dados antes.', danger: true, confirmLabel: 'Apagar tudo' }))) return;
     dataBusy = true; dataError = '';
     try { await onreset(); } catch (err) { dataError = err.message; } finally { dataBusy = false; }
   }

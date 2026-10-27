@@ -299,36 +299,23 @@ func (s *Store) Reset(uid string) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Escrita primeiro: pega o lock antes de ler o rev (um Push concorrente espera, em vez de dar BUSY ou rev velho).
 	var rev int64
-	if err := tx.QueryRow(`SELECT rev FROM users WHERE id=?`, uid).Scan(&rev); err != nil {
+	if err := tx.QueryRow(`UPDATE users SET rev=rev WHERE id=? RETURNING rev`, uid).Scan(&rev); err != nil {
 		return err
 	}
-	rows, err := tx.Query(`SELECT kind,id FROM entities WHERE user_id=? AND deleted_at IS NULL`, uid)
+	// rev único por linha (o pull pagina por rev e empate pularia itens), tudo num UPDATE só.
+	res, err := tx.Exec(`UPDATE entities SET deleted_at=datetime('now'), data='{}', rev=?+t.n
+		FROM (SELECT kind,id,ROW_NUMBER() OVER (ORDER BY rev) n FROM entities WHERE user_id=? AND deleted_at IS NULL) t
+		WHERE entities.user_id=? AND entities.kind=t.kind AND entities.id=t.id`, rev, uid, uid)
 	if err != nil {
 		return err
 	}
-	type key struct{ kind, id string }
-	var live []key
-	for rows.Next() {
-		var k key
-		if err := rows.Scan(&k.kind, &k.id); err != nil {
-			rows.Close()
-			return err
-		}
-		live = append(live, k)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	n, err := res.RowsAffected()
+	if err != nil {
 		return err
 	}
-	for _, k := range live { // rev único por linha: o pull pagina por rev e empate pularia itens
-		rev++
-		if _, err := tx.Exec(`UPDATE entities SET deleted_at=datetime('now'), rev=?, data='{}' WHERE user_id=? AND kind=? AND id=?`,
-			rev, uid, k.kind, k.id); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.Exec(`UPDATE users SET rev=?, rows_n=0, bytes_n=0 WHERE id=?`, rev, uid); err != nil {
+	if _, err := tx.Exec(`UPDATE users SET rev=?, rows_n=0, bytes_n=0 WHERE id=?`, rev+n, uid); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -12,6 +12,7 @@ Erros: `{ "error": "mensagem" }` com o status HTTP correto (nunca erro em 200).
 | GET | `/sync?since=<rev>&limit=` | pull: documentos alterados e tombstones após `rev`, em ordem |
 | POST | `/sync` | push: lote (≤500) de operações idempotentes por `op_id`; resultado por operação (ver `02-arquitetura-offline.md`) |
 | GET | `/export?format=json` | exporta todos os documentos vivos do próprio usuário (`{exported_at, email, entities:[{kind,id,rev,data}]}`), como download (`Content-Disposition`). Só JSON por enquanto |
+| POST | `/reset` | "começar do zero": exclui (tombstone) todos os documentos vivos do usuário e mantém a conta; os outros aparelhos recebem as exclusões no pull. Limite de 5/min por usuário |
 | DELETE | `/account` | corpo `{"confirm_email":"..."}` igual ao e-mail da conta; apaga o usuário e tudo (documentos, sessões, `sync_ops`) em cascata |
 
 ## Cadastro
@@ -24,7 +25,7 @@ produção (escopos básicos `openid email profile` não exigem verificação do
 **Proteção contra abuso** (já que o cadastro é aberto e a VM é pequena):
 - `MAX_USERS` (padrão 200): acima disso, novos cadastros recebem "cadastros encerrados" — é a trava de segurança do disco/RAM.
 - Cota por usuário: ≤ 50 mil linhas e ≤ 20 MB de dados; push acima disso é rejeitado.
-- Rate limit: por IP em `/auth/google` (10/min); por usuário em `/sync` (push 120/min, pull 300/min). IPv6 por prefixo /64; `X-Forwarded-For` só de `TRUSTED_PROXY`.
+- Rate limit: por IP em `/auth/google` (10/min); por usuário em `/sync` (push 120/min, pull 300/min, reset 5/min). IPv6 por prefixo /64; `X-Forwarded-For` só de `TRUSTED_PROXY`.
 - Limite de 20 000 operações por usuário por dia; `sync_ops` guarda só os últimos 2000 `op_id`s.
 
 Verificação do ID token no Go: assinatura RS256 contra as chaves públicas do Google (JWKS, com cache),

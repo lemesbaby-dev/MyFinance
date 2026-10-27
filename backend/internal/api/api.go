@@ -333,6 +333,10 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/reset -> apaga todos os dados financeiros do usuário e mantém a conta.
 func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.allow("r:"+userFrom(r).ID, 5) {
+		writeErr(w, 429, "muitas requisições; aguarde um minuto")
+		return
+	}
 	respond(w, map[string]bool{"ok": true}, s.Store.Reset(userFrom(r).ID))
 }
 

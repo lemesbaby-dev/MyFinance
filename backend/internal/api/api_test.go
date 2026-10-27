@@ -349,6 +349,36 @@ func TestExcluirConta(t *testing.T) {
 	}
 }
 
+func TestResetDados(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob", "bob@x.com")
+	e.push("", upsert("account", "acc1", account("Ana")), upsert("transaction", "tx1", expense("acc1", nil)))
+	e.push(bob, upsert("account", "accB", account("Bob")))
+	_, cur, _ := e.pull("", 0)
+	if code, _, _ := e.do("POST", "/api/reset", "-", m{}); code != 401 {
+		t.Errorf("reset sem sessão = %d", code)
+	}
+	if code, o, _ := e.do("POST", "/api/reset", "", m{}); code != 200 {
+		t.Fatalf("reset: %d %v", code, o)
+	}
+	ch, _, _ := e.pull("", cur) // outro aparelho recebe as exclusões
+	if len(ch) != 2 || !ch[0].Deleted || !ch[1].Deleted || ch[0].Rev == ch[1].Rev {
+		t.Errorf("tombstones: %v", ch)
+	}
+	if code, _, _ := e.do("GET", "/api/auth/me", "", nil); code != 200 {
+		t.Errorf("a conta deve continuar: %d", code)
+	}
+	if ch, _, _ := e.pull(bob, 0); len(ch) != 1 || ch[0].Deleted {
+		t.Errorf("dados do Bob afetados: %v", ch)
+	}
+	for i := 0; i < 4; i++ {
+		e.do("POST", "/api/reset", "", m{})
+	}
+	if code, _, _ := e.do("POST", "/api/reset", "", m{}); code != 429 {
+		t.Errorf("reset 6 = %d, quero 429", code)
+	}
+}
+
 func TestPullTemRateLimit(t *testing.T) {
 	e := newEnv(t)
 	for i := 0; i < 300; i++ {
