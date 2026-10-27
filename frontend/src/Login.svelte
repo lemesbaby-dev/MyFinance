@@ -36,7 +36,13 @@
       if (!google_client_id) throw new Error('Servidor sem GOOGLE_CLIENT_ID configurado.');
       await loadGsi();
       google.accounts.id.initialize({ client_id: google_client_id, callback: onCredential });
-      google.accounts.id.renderButton(btn, { theme: 'outline', size: 'large', text: 'signin_with', locale: 'pt-BR' });
+      // O botão do Google é um iframe (CSS não alcança): casa com o tema pelas opções dele.
+      const dark = document.documentElement.dataset.theme === 'dark'
+        || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      google.accounts.id.renderButton(btn, {
+        theme: dark ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text: 'continue_with', locale: 'pt-BR',
+        width: Math.min(400, Math.max(200, btn.clientWidth)),
+      });
     } catch (e) {
       error = e.message;
     }
@@ -44,14 +50,21 @@
 </script>
 
 <main>
-  <Header title="Finanças" />
-  <p class="muted">Entre com sua conta Google. Seus dados ficam separados dos de outras pessoas.</p>
+  <img class="logo" src="/icon.svg" alt="" width="64" height="64" />
+  <Header title="MyFinance" />
+  <p class="lead">Seu dinheiro em ordem, sem complicação.</p>
   <div bind:this={btn} class="gbtn"></div>
   {#if error}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
+  <p class="note">Primeira vez por aqui? É só entrar: sua conta é criada na hora.</p>
+  <p class="note">Seus dados são só seus: nenhuma outra conta tem acesso a eles. Pedimos ao Google apenas seu nome e e-mail.</p>
 </main>
 
 <style>
-  main { max-width: 26rem; margin: 0 auto; padding: var(--space-12) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+  main { max-width: 22rem; margin: 0 auto; padding: var(--space-16) var(--space-4); display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-3); }
   p { margin: 0; }
-  .gbtn { margin: var(--space-4) 0; min-height: var(--tap); }
+  .logo { border-radius: var(--radius-2); box-shadow: var(--shadow-soft); margin-bottom: var(--space-2); }
+  main :global(h1) { font-size: var(--fs-6); }
+  .lead { font: var(--fw-medium) var(--fs-3)/var(--lh-body) var(--font-text); color: var(--text-body); }
+  .gbtn { width: 100%; margin: var(--space-4) 0 var(--space-2); min-height: var(--tap); display: flex; justify-content: center; }
+  .note { font: var(--fw-medium) var(--fs-2)/var(--lh-body) var(--font-text); color: var(--text-muted); }
 </style>

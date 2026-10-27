@@ -1,0 +1,29 @@
+# Isolado do Nexus/Gume: rede própria, nomes com prefixo financas-, nenhuma porta publicada no host.
+# Entrada: Cloudflare Tunnel próprio (financas.josiasbueno.com -> http://financas:8080).
+name: financas
+services:
+  financas:
+    build: { context: .., dockerfile: Dockerfile }
+    image: financas:local
+    container_name: financas-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TRUSTED_PROXY: 10.91.77.0/28   # só o cloudflared (mesma rede) pode informar o IP do cliente
+    volumes: [ "financas_data:/data" ]
+    networks: [ internal ]
+    mem_limit: 256m
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: financas-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on: [ financas ]
+    networks: [ internal ]
+volumes:
+  financas_data:
+networks:
+  internal:
+    ipam: { config: [ { subnet: 10.91.77.0/28 } ] }

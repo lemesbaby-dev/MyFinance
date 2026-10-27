@@ -1,4 +1,4 @@
-# Finanças
+# MyFinance
 
 App pessoal de controle financeiro: **saldo atual**, **saldo previsto**, categorias,
 recorrências e parcelamentos. Roda no navegador (PWA).

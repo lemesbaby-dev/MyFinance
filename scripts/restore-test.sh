@@ -7,7 +7,9 @@ set -euo pipefail
 OUT="${BACKUP_DIR:-/var/backups/financas}"
 src="${1:-$(ls -1t "$OUT"/financas-*.db 2>/dev/null | head -n1 || true)}"
 [ -n "$src" ] && [ -f "$src" ] || { echo "nenhum backup encontrado (BACKUP_DIR=$OUT)" >&2; exit 1; }
-command -v sqlite3 >/dev/null 2>&1 || { echo "precisa do sqlite3 (apt install sqlite3)" >&2; exit 1; }
+if ! command -v sqlite3 >/dev/null 2>&1; then   # sem sqlite3 no host: usa o da imagem do app
+  sqlite3() { docker run --rm -i --user "$(id -u)" --entrypoint sqlite3 -v "$tmp:$tmp" "${IMAGE:-financas:local}" "$@"; }
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
