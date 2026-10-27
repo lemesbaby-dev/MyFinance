@@ -14,7 +14,7 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /financas ./cmd/server
 
 FROM alpine:3.22
-RUN adduser -D -u 10001 app && mkdir /data && chown app /data
+RUN apk add --no-cache sqlite && adduser -D -u 10001 app && mkdir /data && chown app /data
 COPY --from=api /financas /usr/local/bin/financas
 COPY --from=web /w/dist /srv/dist
 USER app
