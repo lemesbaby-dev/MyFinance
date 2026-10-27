@@ -35,7 +35,7 @@ Da sua máquina, na raiz do repo:
 
 ```bash
 git fetch && git checkout main && git pull
-ssh <HOST_SSH> 'docker tag financas:local financas:rollback'          # guarda a imagem atual
+ssh <HOST_SSH> 'docker tag financas:local financas:rollback || true'   # guarda a imagem atual (no 1º deploy ainda não existe: o || true evita erro)
 git archive origin/main | ssh <HOST_SSH> 'tar -x -C <APP_DIR>/src'
 ssh <HOST_SSH> 'cd <APP_DIR>/src/deploy && docker compose up -d --build financas'
 ```
@@ -72,13 +72,13 @@ Termina com `enviado para s3://…` quando a cópia externa foi confirmada no bu
 ssh <HOST_SSH> 'docker tag financas:rollback financas:local && cd <APP_DIR>/src/deploy && docker compose up -d --no-build financas'
 ```
 
-Lembre de também voltar os arquivos em `<APP_DIR>/src` (`git archive <commit-bom> | ssh … tar -x`), senão o próximo `--build` reaplica a versão ruim.
+Isso funciona porque o compose usa `image: financas:local` junto de `build:` e o `--no-build` sobe a imagem já tagueada em vez de reconstruir. Lembre de também voltar os arquivos em `<APP_DIR>/src` (`git archive <commit-bom> | ssh … tar -x`), senão o próximo `--build` reaplica a versão ruim.
 
 **Com migração de schema ou dado corrompido:** restaurar o backup mais recente.
 
 1. `ssh <HOST_SSH> 'cd <APP_DIR>/src/deploy && docker compose stop financas'`
-2. Escolha o arquivo em `<APP_DIR>/backups` (ou no bucket) e valide: `BACKUP_DIR=<APP_DIR>/backups scripts/restore-test.sh`.
-3. Copie-o para `/data/financas.db` do volume, com o container parado (ex.: `docker run --rm -v <VOLUME_DADOS>:/data -v <APP_DIR>/backups:/b alpine cp /b/<arquivo>.db /data/financas.db`).
+2. Escolha o arquivo em `<APP_DIR>/backups` (ou no bucket) e valide, na VM: `ssh <HOST_SSH> 'BACKUP_DIR=<APP_DIR>/backups <APP_DIR>/src/scripts/restore-test.sh'`.
+3. Copie-o para `/data/financas.db` do volume, com o container parado (ex.: `docker run --rm -v <VOLUME_DADOS>:/data -v <APP_DIR>/backups:/b alpine sh -c 'rm -f /data/financas.db-wal /data/financas.db-shm && cp /b/<arquivo>.db /data/financas.db'`). O SQLite roda em modo WAL: sobras de `-wal`/`-shm` do banco antigo, se mantidas, seriam reaplicadas sobre o arquivo restaurado e o corromperiam — por isso o `rm -f`.
 4. Faça o rollback de código e suba: `docker compose up -d --no-build financas`.
 
 Dados feitos após o backup são perdidos; clientes offline reenviam o que tinham pendente ao reconectar.
