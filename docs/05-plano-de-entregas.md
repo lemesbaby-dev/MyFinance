@@ -11,7 +11,7 @@ Cada marco termina com algo que roda e foi validado. Ordem pensada para provar o
 | M3 | **Lógica no cliente** — saldo atual/previsto, recorrência, parcelas em JS com os vetores de teste do Go | mesmos casos do `finance_test.go` passam em JS |
 | M4 | **CRUD completo na UI** — contas, categorias, lançamentos, recorrências (editar: só esta / próximas / todas), navegação por mês | usar o app 100% em modo avião |
 | M5 | **PWA** — instalável, ícones, aviso offline/pendências, `storage.persist()`, tela "Cartão — em breve" | Lighthouse PWA ok; teste real no Android e iPhone |
-| M6 | **Deploy Contabo** — Caddy + HTTPS, serviço, firewall, backup diário com cópia externa, restauração testada | acessível por domínio; restore feito de verdade |
+| M6 | **Deploy na VM** — Caddy + HTTPS, serviço, firewall, backup diário com cópia externa, restauração testada | acessível por domínio; restore feito de verdade |
 | M7 | **Exportar/excluir dados**, polimento, README | RF/RNF revisados |
 
 ## v2 (pós-MVP, por prioridade sugerida)

@@ -1,5 +1,5 @@
-# Isolado do Nexus/Gume: rede própria, nomes com prefixo financas-, nenhuma porta publicada no host.
-# Entrada: Cloudflare Tunnel próprio (financas.josiasbueno.com -> http://financas:8080).
+# Isolado de outros serviços da VM: rede própria, nomes com prefixo financas-, nenhuma porta publicada no host.
+# Entrada: Cloudflare Tunnel próprio (financas.exemplo.com -> http://financas:8080).
 name: financas
 services:
   financas:
