@@ -114,7 +114,7 @@ Falha de rede ⇒ a operação continua na outbox; nada se perde. (M2: ao abrir,
 | cálculo em Go | cálculo em JS |
 | delete físico | `deleted_at` (tombstone) |
 
-## Deploy (Contabo)
+## Deploy (VM)
 - 1 VM pequena, **Caddy** (HTTPS automático via Let's Encrypt) → Go em `127.0.0.1:8080`, que também serve o front.
 - Firewall: só 22 (por chave), 80, 443.
 - Backup: `scripts/backup.sh` diário (`sqlite3 .backup`, rotação) + cópia para fora da VM (rclone/scp, exemplos no script).

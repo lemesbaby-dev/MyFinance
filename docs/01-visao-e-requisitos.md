@@ -2,7 +2,7 @@
 
 ## Visão
 Controle financeiro pessoal **leve**, em **PWA** (web + celular), que **funciona offline em tudo**
-e roda numa VM pequena (Contabo). Até ~10 usuários, cada um com seus próprios dados.
+e roda numa VM pequena. Até ~10 usuários, cada um com seus próprios dados.
 
 ## Princípios
 1. **Leveza**: 1 binário Go + SQLite; servidor < 50 MB de RAM em repouso.

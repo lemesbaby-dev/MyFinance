@@ -43,7 +43,7 @@ echo "backup ok: $dest ($(wc -c <"$dest") bytes)"
 # Rotação
 find "$OUT" -maxdepth 1 -name 'financas-*.db*' -type f -mtime +"$KEEP_DAYS" -delete
 
-# --- envio para fora da VM: S3 (ex.: Contabo Object Storage) via rclone em container ---
+# --- envio para fora da VM: S3 (qualquer provedor compatível) via rclone em container ---
 # Defina S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY no ambiente do cron. Sem S3_BUCKET, só guarda local.
 if [ -n "${S3_BUCKET:-}" ]; then
   rc() { docker run --rm -v "$OUT:/b:ro" \
