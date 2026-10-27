@@ -1,5 +1,7 @@
 <script>
-  import { ICONS } from './icons.js';
+  import { ICONS as BASE } from './icons.js';
+  import { DEV_ICONS } from './icons-dev.js';
+  const ICONS = import.meta.env.DEV ? { ...BASE, ...DEV_ICONS } : BASE;
   // Decorativo por padrão (aria-hidden). Para ícone com significado, passe `label`.
   let { name, size = 'md', label = '' } = $props();
 </script>

@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test",
-    "lint:css": "stylelint \"src/**/*.{css,svelte}\""
+    "lint:css": "stylelint \"src/**/*.{css,svelte}\"",
+    "sync:tokens": "node -e \"fs.copyFileSync('../docs/design/tokens/tokens.css','src/tokens.css')\""
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

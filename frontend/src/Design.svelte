@@ -1,6 +1,7 @@
 <script>
   // Página interna #/design (só em dev; App.svelte a carrega por import dinâmico atrás de import.meta.env.DEV).
   // Mostra tokens e componentes em claro e escuro lado a lado.
+  import ToastHost from './ui/ToastHost.svelte';
   import Button from './ui/Button.svelte';
   import IconButton from './ui/IconButton.svelte';
   import Icon from './ui/Icon.svelte';
@@ -76,6 +77,7 @@
   }
 </script>
 
+<ToastHost />
 <main class="page">
   <header>
     <h1>Design system</h1>

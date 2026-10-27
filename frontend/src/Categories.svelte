@@ -1,10 +1,23 @@
 <script>
   import { app, saveCategory, deleteCategory } from './lib/app.svelte.js';
-  import { dialog } from './lib/a11y.js';
+  import FormSheet from './ui/FormSheet.svelte';
+  import Card from './ui/Card.svelte';
+  import Badge from './ui/Badge.svelte';
+  import Button from './ui/Button.svelte';
+  import IconButton from './ui/IconButton.svelte';
+  import CategoryDot from './ui/CategoryDot.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Segmented from './ui/Segmented.svelte';
+  import TextInput from './ui/TextInput.svelte';
+  import Select from './ui/Select.svelte';
+  import { confirmDialog } from './ui/confirm.js';
+  import { catOf } from './ui/logic.js';
 
   const KINDS = [['expense', 'Despesas'], ['income', 'Receitas']];
   let form = $state(null); // { id?, name, kind, parent_id }
   let error = $state('');
+  let errField = $state('');
   let busy = $state(false);
 
   const tops = (kind) => app.categories.filter((c) => c.kind === kind && !c.parent_id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -13,14 +26,16 @@
   const parents = $derived(form ? tops(form.kind).filter((c) => c.id !== form.id) : []);
   const hasKids = $derived(form?.id ? kids(form.id).length > 0 : false);
 
+  const parentOpts = $derived([['', '(categoria principal)'], ...parents.map((p) => [p.id, p.name])]);
   const open = (c, kind = 'expense') => {
-    error = '';
+    error = ''; errField = '';
     form = c ? { id: c.id, name: c.name, kind: c.kind, parent_id: c.parent_id ?? '' } : { name: '', kind, parent_id: '' };
   };
 
   async function submit(e) {
     e.preventDefault();
-    if (!form.name.trim()) { error = 'Informe o nome.'; return; }
+    error = ''; errField = '';
+    if (!form.name.trim()) { error = 'Informe o nome.'; errField = 'name'; return; }
     busy = true;
     try {
       await saveCategory(form.id ?? null, { name: form.name, kind: form.kind, parent_id: hasKids ? null : form.parent_id });
@@ -29,59 +44,59 @@
   }
 
   async function remove() {
-    if (!confirm(`Excluir "${form.name}"? Os lançamentos dela ficam sem categoria.`)) return;
+    if (!(await confirmDialog({ title: `Excluir "${form.name}"?`, message: 'Os lançamentos dela ficam sem categoria.', danger: true, confirmLabel: 'Excluir' }))) return;
     busy = true;
     try { await deleteCategory(form.id); form = null; } catch (err) { error = err.message; } finally { busy = false; }
   }
 </script>
 
 {#each KINDS as [kind, title]}
-  <section class="pad">
+  <section class="sec">
     <h2>{title}</h2>
-    <ul class="rows">
-      {#each tops(kind) as c (c.id)}
-        <li>
-          <div class="grow"><strong>{c.name}</strong></div>
-          <button class="btn small ghost" onclick={() => open(c)} aria-label="Editar {c.name}">✎</button>
-        </li>
-        {#each kids(c.id) as k (k.id)}
-          <li class="sub">
-            <div class="grow"><span>↳ {k.name}</span></div>
-            <button class="btn small ghost" onclick={() => open(k)} aria-label="Editar {k.name}">✎</button>
-          </li>
-        {/each}
-      {:else}
-        <li><span class="muted">Nenhuma categoria.</span></li>
-      {/each}
-    </ul>
-    <p><button class="btn small ghost" onclick={() => open(null, kind)}>Nova categoria</button></p>
+    {#if tops(kind).length}
+      <Card pad={false}>
+        <ul>
+          {#each tops(kind) as c (c.id)}
+            <li>
+              <CategoryDot n={catOf(c.id)} />
+              <span class="t">{c.name}</span>
+              <IconButton icon="edit" label="Editar {c.name}" tone="muted" onclick={() => open(c)} />
+            </li>
+            {#each kids(c.id) as k (k.id)}
+              <li class="sub">
+                <CategoryDot n={catOf(k.id)} size="sm" />
+                <span class="t">{k.name}</span>
+                <IconButton icon="edit" label="Editar {k.name}" tone="muted" onclick={() => open(k)} />
+              </li>
+            {/each}
+          {/each}
+        </ul>
+      </Card>
+    {:else}
+      <EmptyState icon="tag" title="Nenhuma categoria" />
+    {/if}
+    <div><Button variant="secondary" size="sm" onclick={() => open(null, kind)}><Icon name="plus" />Nova categoria</Button></div>
   </section>
 {/each}
 
 {#if form}
-  <div class="scrim" role="presentation" onclick={() => (form = null)}></div>
-  <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-  <form class="sheet" role="dialog" aria-modal="true" use:dialog={() => (form = null)} onsubmit={submit} aria-label="Categoria">
-    <h3>{form.id ? 'Editar categoria' : 'Nova categoria'}</h3>
-    <div class="seg" role="group" aria-label="Tipo">
-      {#each KINDS as [k, text]}
-        <button type="button" class:on={form.kind === k} disabled={!!form.id} onclick={() => { form.kind = k; form.parent_id = ''; }}>{text}</button>
-      {/each}
-    </div>
-    <label class="field"><span>Nome</span><input bind:value={form.name} maxlength="200" required /></label>
-    {#if !hasKids}
-      <label class="field"><span>Dentro de</span>
-        <select bind:value={form.parent_id}><option value="">(categoria principal)</option>{#each parents as p (p.id)}<option value={p.id}>{p.name}</option>{/each}</select></label>
+  <FormSheet title={form.id ? 'Editar categoria' : 'Nova categoria'} onclose={() => (form = null)} onsubmit={submit} {busy} error={errField ? '' : error} onremove={form.id ? remove : undefined} removeLabel="Excluir categoria">
+    {#if form.id}
+      <div><Badge tone="brand">{KINDS.find(([k]) => k === form.kind)?.[1]}</Badge></div>
+    {:else}
+      <Segmented label="Tipo" options={KINDS} bind:value={form.kind} onchange={() => (form.parent_id = '')} />
     {/if}
-    {#if error}<p class="err" role="alert">{error}</p>{/if}
-    <div class="actions">
-      <button type="button" class="btn ghost" onclick={() => (form = null)}>Cancelar</button>
-      <button class="btn" disabled={busy}>Salvar</button>
-    </div>
-    {#if form.id}<p><button type="button" class="btn small ghost" onclick={remove} disabled={busy}>Excluir categoria</button></p>{/if}
-  </form>
+    <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
+    {#if !hasKids}<Select label="Dentro de" bind:value={form.parent_id} options={parentOpts} />{/if}
+  </FormSheet>
 {/if}
 
 <style>
-  .sub { padding-left: 1rem; }
+  .sec { display: flex; flex-direction: column; gap: var(--space-3); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: var(--space-3); padding: var(--row-pad); }
+  li + li { border-top: var(--bw-1) solid var(--border-subtle); }
+  .sub { padding-left: var(--space-8); }
+  .t { flex: 1; min-width: 0; font-weight: var(--fw-bold); color: var(--text-strong); }
+  .sub .t { font-weight: var(--fw-medium); }
 </style>

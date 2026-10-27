@@ -12,9 +12,15 @@
   import Categories from './Categories.svelte';
   import More from './More.svelte';
   import ConfirmHost from './ui/ConfirmHost.svelte';
-  import ToastHost from './ui/ToastHost.svelte';
+  import { confirmDialog } from './ui/confirm.js';
+  import Header from './ui/Header.svelte';
+  import TabBar from './ui/TabBar.svelte';
+  import Banner from './ui/Banner.svelte';
+  import Button from './ui/Button.svelte';
+  import Skeleton from './ui/Skeleton.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
 
-  const TABS = [['month', 'Mês'], ['accounts', 'Contas'], ['categories', 'Categorias'], ['more', 'Mais']];
+  const TABS = [['month', 'Mês', 'home'], ['accounts', 'Contas', 'wallet'], ['categories', 'Categorias', 'tag'], ['more', 'Mais', 'sliders']];
 
   let needLogin = $state(!hasSession());
   let tab = $state('month');
@@ -26,6 +32,7 @@
 
   // Com itens recusados pendentes o app abre normal: o aviso fica na aba Mais e não pode ser escondido pelos "primeiros passos".
   const showFirstRun = $derived(app.ready && app.accounts.length === 0 && app.rejected.length === 0 && (app.synced || forceFirst));
+  const tabbed = $derived(TABS.map(([k, t, i]) => (k === 'more' && (app.status.pending || app.status.rejected) ? [k, t, i, app.status.rejected ? 'alterações recusadas pelo servidor' : 'alterações por enviar'] : [k, t, i])));
   const waitingData = $derived(app.ready && app.accounts.length === 0 && !app.synced && !forceFirst);
 
   async function boot(user) {
@@ -45,7 +52,7 @@
   }
 
   async function discardAndContinue() {
-    if (!confirm('As alterações não enviadas da outra conta serão perdidas. Continuar?')) return;
+    if (!(await confirmDialog({ title: 'Descartar alterações?', message: 'As alterações não enviadas da outra conta serão perdidas. Continuar?', danger: true, confirmLabel: 'Descartar' }))) return;
     try {
       const user = await session.discardAndContinue();
       blocked = false;
@@ -59,14 +66,14 @@
     needLogin = true;
   }
 
-  function startFresh() {
-    if (confirm('Se você já usa o app em outro aparelho, começar do zero pode duplicar contas e categorias quando os dados chegarem. Começar do zero mesmo assim?')) forceFirst = true;
+  async function startFresh() {
+    if (await confirmDialog({ title: 'Começar do zero?', message: 'Se você já usa o app em outro aparelho, começar do zero pode duplicar contas e categorias quando os dados chegarem. Começar do zero mesmo assim?', confirmLabel: 'Começar do zero' })) forceFirst = true;
   }
 
   async function logout() {
     await sync().catch(() => {});
     const n = await db.unsent(); // na fila ou recusadas: as duas se perderiam num wipe
-    if (n > 0 && !confirm(`${n} alteração(ões) ainda não foram enviadas ou foram recusadas pelo servidor. Elas ficam guardadas neste aparelho até você entrar de novo com esta mesma conta. Sair mesmo assim?`)) return;
+    if (n > 0 && !(await confirmDialog({ title: 'Sair mesmo assim?', message: `${n} alteração(ões) ainda não foram enviadas ou foram recusadas pelo servidor. Elas ficam guardadas neste aparelho até você entrar de novo com esta mesma conta. Sair mesmo assim?`, danger: true, confirmLabel: 'Sair' }))) return;
     try { await api.logout(); } catch { /* sem rede: encerra só localmente */ }
     clearSession();
     app.ready = false;
@@ -99,59 +106,47 @@
   <Login onlogin={(u, state) => { needLogin = false; if (state === 'blocked') blocked = true; else boot(u); }} />
 {:else if blocked}
   <main class="center">
-    <h1>Alterações pendentes de outra conta</h1>
+    <Header title="Alterações pendentes de outra conta" />
     <p class="muted">Este aparelho guarda alterações não enviadas de outra conta Google. Entre com ela para enviá-las, ou descarte-as.</p>
-    <p><button class="btn" onclick={discardAndContinue}>Descartar e continuar</button></p>
-    {#if error}<p class="err" role="alert">{error}</p>{/if}
-    <p><button class="btn ghost" onclick={otherAccount}>Entrar com outra conta</button></p>
+    <Button variant="danger" block onclick={discardAndContinue}>Descartar e continuar</Button>
+    {#if error}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
+    <Button variant="secondary" block onclick={otherAccount}>Entrar com outra conta</Button>
   </main>
 {:else if !app.ready}
   <main class="center">
-    {#if error}<p class="err" role="alert">{error}</p><button class="btn" onclick={() => boot()}>Tentar de novo</button>
-    {:else}<p class="muted">Carregando…</p>{/if}
+    {#if error}<EmptyState icon="alert" tone="danger" role="alert" title="Não deu certo" text={error} actionLabel="Tentar de novo" onaction={() => boot()} />
+    {:else}<Skeleton kind="row" count={3} />{/if}
   </main>
 {:else if showFirstRun}
   <FirstRun />
 {:else}
   <div class="shell">
-    {#if !app.status.online || app.status.offline || app.status.pending || app.status.rejected || app.status.error}
-      <p class="statusbar" role="status">
-        {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else if app.status.pending}Enviando alterações…{/if}
-        {#if app.status.pending} · {app.status.pending} por enviar{/if}
-        {#if app.status.rejected} · <strong>{app.status.rejected} recusado(s) pelo servidor</strong> (veja em Mais){/if}
-      </p>
-    {/if}
     <main>
+      {#if !app.status.online || app.status.offline || app.status.pending || app.status.rejected || app.status.error}
+        <Banner tone={app.status.rejected || (app.status.error && app.status.online && !app.status.offline) ? 'warn' : 'info'} icon={!app.status.online || app.status.offline ? 'cloud-off' : app.status.error ? 'alert' : 'refresh'}>
+          {#if !app.status.online || app.status.offline}Offline — suas alterações ficam guardadas neste aparelho{:else if app.status.error}Não foi possível sincronizar: {app.status.error}{:else if app.status.pending}Enviando alterações…{/if}
+          {#if app.status.pending} · {app.status.pending} por enviar{/if}
+          {#if app.status.rejected} · <strong>{app.status.rejected} recusado(s) pelo servidor</strong> (veja em Mais){/if}
+        </Banner>
+      {/if}
+      <Header title={TABS.find(([k]) => k === tab)[1]} />
       {#if waitingData}
-        <p class="pad muted">Buscando seus dados… <button class="btn small ghost" onclick={startFresh}>Começar do zero</button></p>
+        <Skeleton kind="row" count={2} />
+        <p class="muted wait">Buscando seus dados… <Button variant="ghost" size="sm" onclick={startFresh}>Começar do zero</Button></p>
       {/if}
       {#if tab === 'month'}<Month />
       {:else if tab === 'accounts'}<Accounts />
       {:else if tab === 'categories'}<Categories />
       {:else}<More onlogout={logout} ondelete={deleteAccount} />{/if}
     </main>
-    <nav class="tabs" aria-label="Seções">
-      {#each TABS as [k, label]}
-        <button class:on={tab === k} aria-current={tab === k ? 'page' : undefined} onclick={() => (tab = k)}>
-          {label}{#if k === 'more' && (app.status.pending || app.status.rejected)}<span class="dot" aria-label={app.status.rejected ? 'alterações recusadas pelo servidor' : 'alterações por enviar'}></span>{/if}
-        </button>
-      {/each}
-    </nav>
+    <div class="tabs"><TabBar label="Seções" tabs={tabbed} value={tab} onselect={(k) => (tab = k)} /></div>
   </div>
 {/if}
 <ConfirmHost />
-<ToastHost />
 
 <style>
-  .shell main { max-width: 42rem; margin: 0 auto; padding-bottom: 8rem; }
-  .center { max-width: 26rem; margin: 0 auto; padding: 3rem 1.25rem; }
-  .center h1 { font-size: 1.3rem; }
-  .statusbar { margin: 0; padding: 0.4rem 1.25rem; font-size: 0.8125rem; text-align: center; background: color-mix(in srgb, var(--out) 12%, transparent); color: var(--ink); }
-  .tabs {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr);
-    background: var(--paper); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
-  }
-  .tabs button { border: 0; background: transparent; padding: 0.85rem 0.25rem; color: var(--muted); position: relative; }
-  .tabs button.on { color: var(--ink); font-weight: 650; box-shadow: inset 0 2px 0 var(--ink); }
-  .dot { position: absolute; top: 0.6rem; margin-left: 0.2rem; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--out); }
+  .shell main { max-width: 42rem; margin: 0 auto; padding: var(--space-4) var(--space-4) calc(var(--tabbar-h) + var(--space-16)); display: flex; flex-direction: column; gap: var(--space-4); }
+  .center { max-width: 26rem; margin: 0 auto; padding: var(--space-12) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+  .center p, .wait { margin: 0; }
+  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-tabbar); }
 </style>
