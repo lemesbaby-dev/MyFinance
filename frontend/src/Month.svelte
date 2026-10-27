@@ -155,9 +155,9 @@
 
 <style>
   .cap { margin: 0 0 var(--space-2); font: var(--fw-bold) var(--fs-2)/var(--lh-tight) var(--font-text); color: var(--text-muted); }
-  .tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); }
-  /* Três colunas sempre: fonte menor para "+R$ 5.000,00" caber em celular estreito. */
-  .tot :global(.ui-money) { font-size: clamp(var(--fs-1), 3.4vw, var(--fs-4)); }
+  .tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); container-type: inline-size; }
+  /* Três colunas sempre: a fonte segue a largura do card (como no BalanceHero) para "+R$ 5.000,00" caber. */
+  .tot :global(.ui-money) { font-size: clamp(var(--fs-2), 4.6cqw, var(--fs-4)); }
   .list { display: flex; flex-direction: column; gap: var(--space-2); }
   .fab { position: fixed; right: var(--space-4); bottom: calc(var(--tabbar-h) + var(--space-3) + env(safe-area-inset-bottom)); z-index: var(--z-sticky); box-shadow: var(--shadow-lift); border-radius: var(--radius-pill); }
 </style>
