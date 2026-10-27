@@ -47,4 +47,4 @@ Calmo, afirmando o que continua funcionando: "Offline. Tudo continua funcionando
 Confirmam em 1 a 3 palavras e, se der, oferecem desfazer: "Lançamento salvo" (ação "Desfazer"), "Excluído".
 
 ## Saudação e identidade
-"Oi, Josias" no cabeçalho (opcional), "Vamos começar" no primeiro acesso; nome do app "Finanças". Sem emojis em mensagens de erro.
+"Oi, Josias" no cabeçalho (opcional), "Vamos começar" no primeiro acesso; nome do app "MyFinance". Sem emojis em mensagens de erro.
