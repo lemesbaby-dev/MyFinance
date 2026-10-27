@@ -10,10 +10,11 @@
   import Badge from './ui/Badge.svelte';
   import Banner from './ui/Banner.svelte';
   import TextInput from './ui/TextInput.svelte';
+  import { confirmDialog } from './ui/confirm.js';
 
   import { onMount } from 'svelte';
 
-  let { onlogout, ondelete } = $props();
+  let { onlogout, ondelete, onreset } = $props();
   let theme = $state(getTheme());
   let cvd = $state(getCvd());
   const THEMES = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro']];
@@ -57,6 +58,12 @@
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (e) { dataError = e.message; } finally { dataBusy = false; }
+  }
+
+  async function resetData() {
+    if (!(await confirmDialog({ title: 'Começar do zero?', message: 'Apaga todas as suas contas, categorias, recorrências e lançamentos, neste aparelho e no servidor, e não tem volta. Sua conta de acesso continua. Outro aparelho com alterações ainda não enviadas pode recriar parte dos dados quando voltar a ficar online: sincronize os demais antes. Se quiser guardar uma cópia, exporte seus dados antes.', danger: true, confirmLabel: 'Apagar tudo' }))) return;
+    dataBusy = true; dataError = '';
+    try { await onreset(); } catch (err) { dataError = err.message; } finally { dataBusy = false; }
   }
 
   async function removeAccount(e) {
@@ -137,8 +144,9 @@
 
 <section class="sec">
   <h2>Seus dados</h2>
-  <p class="muted small">Baixe uma cópia de tudo que está no servidor ou apague sua conta de vez. Precisa de internet.</p>
+  <p class="muted small">Baixe uma cópia de tudo que está no servidor, recomece com a conta vazia ou apague sua conta de vez. Precisa de internet.</p>
   <div><Button variant="secondary" onclick={exportData} disabled={dataBusy}>Exportar meus dados</Button></div>
+  <div><Button variant="danger" onclick={resetData} disabled={dataBusy}>Começar do zero</Button></div>
   {#if !deleting}
     <div><Button variant="danger" onclick={() => (deleting = true)}>Excluir minha conta</Button></div>
   {:else}

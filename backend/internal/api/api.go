@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sync", s.pull)
 	mux.HandleFunc("POST /api/sync", s.push)
 	mux.HandleFunc("GET /api/export", s.export)
+	mux.HandleFunc("POST /api/reset", s.reset)
 	mux.HandleFunc("DELETE /api/account", s.deleteAccount)
 
 	return s.cors(s.auth(mux))
@@ -328,6 +329,15 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="financas-export.json"`)
 	writeJSON(w, 200, map[string]any{"exported_at": time.Now().UTC().Format(time.RFC3339),
 		"email": u.Email, "entities": docs})
+}
+
+// POST /api/reset -> apaga todos os dados financeiros do usuário e mantém a conta.
+func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.allow("r:"+userFrom(r).ID, 5) {
+		writeErr(w, 429, "muitas requisições; aguarde um minuto")
+		return
+	}
+	respond(w, map[string]bool{"ok": true}, s.Store.Reset(userFrom(r).ID))
 }
 
 // DELETE /api/account {"confirm_email": "..."} -> apaga o usuário e tudo dele.

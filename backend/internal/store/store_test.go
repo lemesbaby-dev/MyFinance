@@ -288,3 +288,22 @@ func TestDeleteUserEmCascata(t *testing.T) {
 		}
 	}
 }
+
+func TestResetApagaDadosEPropagaTombstones(t *testing.T) {
+	st, uid := open(t)
+	st.Push(uid, []Op{acc("a1"), acc("a2")})
+	_, cur, _, _ := st.Pull(uid, 0, 100)
+	if err := st.Reset(uid); err != nil {
+		t.Fatal(err)
+	}
+	ch, _, _, _ := st.Pull(uid, cur, 100) // outro aparelho já sincronizado recebe as exclusões
+	if len(ch) != 2 || !ch[0].Deleted || !ch[1].Deleted || ch[0].Rev == ch[1].Rev {
+		t.Fatalf("tombstones: %+v", ch)
+	}
+	if ex, _ := st.Export(uid); len(ex) != 0 {
+		t.Fatalf("export após reset: %d", len(ex))
+	}
+	if res, _ := st.Push(uid, []Op{acc("a3")}); res[0].Status != "ok" {
+		t.Fatalf("conta continua usável: %+v", res)
+	}
+}

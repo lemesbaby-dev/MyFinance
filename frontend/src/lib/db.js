@@ -202,6 +202,17 @@ export const wipe = () => (
   })
 );
 
+// "Começar do zero": limpa dados, fila e recusados; mantém usuário e `synced` (o app volta aos primeiros passos).
+export const resetLocal = () => (
+  gen++,
+  tx(['entities', 'outbox', 'meta'], 'readwrite', (s) => {
+    s.entities.clear();
+    s.outbox.clear();
+    s.meta.delete('rejected');
+    s.meta.delete('cursor');
+  })
+);
+
 // Dados de outra pessoa nunca podem aparecer: se o usuário mudou, zera a cópia local.
 // Com pendências do usuário anterior não apaga nada: a interface decide (M4).
 export async function ensureUser(userId) {
