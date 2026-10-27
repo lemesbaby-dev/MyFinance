@@ -155,7 +155,7 @@
 
 <style>
   .cap { margin: 0 0 var(--space-2); font: var(--fw-bold) var(--fs-2)/var(--lh-tight) var(--font-text); color: var(--text-muted); }
-  .tot { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: var(--space-2) var(--space-4); }
+  .tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); }
   .list { display: flex; flex-direction: column; gap: var(--space-2); }
   .fab { position: fixed; right: var(--space-4); bottom: calc(var(--tabbar-h) + var(--space-3) + env(safe-area-inset-bottom)); z-index: var(--z-sticky); box-shadow: var(--shadow-lift); border-radius: var(--radius-pill); }
 </style>

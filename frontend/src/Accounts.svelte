@@ -41,12 +41,11 @@
 
   async function submit(e) {
     e.preventDefault();
-    const cents = form.balance;
     error = ''; errField = '';
     if (!form.name.trim()) { error = 'Informe o nome da conta.'; errField = 'name'; return; }
     busy = true;
     try {
-      await saveAccount(form.id ?? null, { name: form.name, type: form.type, initial_balance_cents: cents, archived: form.archived });
+      await saveAccount(form.id ?? null, { name: form.name, type: form.type, initial_balance_cents: form.balance, archived: form.archived });
       form = null;
     } catch (err) { error = err.message; } finally { busy = false; }
   }

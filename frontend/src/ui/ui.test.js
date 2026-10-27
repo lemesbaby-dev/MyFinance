@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { moneyText, centsFromInput } from './money.js';
+import { moneyText, centsFromInput, signCents } from './money.js';
 import { confirmDialog, registerConfirmHost } from './confirm.js';
 import { dialog } from '../lib/a11y.js';
 
@@ -21,6 +21,13 @@ test('MoneyInput: digitação em centavos', () => {
   assert.equal(centsFromInput('R$ 1.234,56'), 123456);
   assert.equal(centsFromInput(''), 0);
   assert.ok(centsFromInput('9'.repeat(20)) < 1e14); // teto do servidor
+});
+
+test('MoneyInput: sinal negativo; zero nunca vira -0', () => {
+  assert.equal(signCents(5000, true), -5000);
+  assert.equal(signCents(5000, false), 5000);
+  assert.ok(Object.is(signCents(0, true), 0));
+  assert.equal(centsFromInput('-R$ 50,00'), 5000); // o '-' do texto não conta como dígito
 });
 
 test('Confirm: resolve true/false; sem host nega', async () => {
