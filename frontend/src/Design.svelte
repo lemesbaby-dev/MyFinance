@@ -9,6 +9,7 @@
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
   import MoneyInput from './ui/MoneyInput.svelte';
+  import DatePicker from './ui/DatePicker.svelte';
   import Money from './ui/Money.svelte';
   import Badge from './ui/Badge.svelte';
   import Switch from './ui/Switch.svelte';
@@ -62,6 +63,7 @@
   const THEMES = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro']];
   let seg = $state('light');
   let sw = $state(true);
+  let dt = $state('2026-10-27');
   let cents = $state(123456);
   let text = $state('');
   let sel = $state('b');
@@ -128,6 +130,7 @@
           <TextInput label="Descrição" help="Como aparece na lista" bind:value={text} placeholder="Mercado" />
           <TextInput label="Com erro" error="Informe uma descrição" value="" />
           <Select label="Conta" bind:value={sel} options={[['a', 'Carteira'], ['b', 'Banco'], ['c', 'Cartão']]} />
+          <DatePicker label="Vencimento" bind:value={dt} />
           <MoneyInput label="Valor" bind:value={cents} help="Digite só os números" />
           <MoneyInput label="Valor com erro" error="Valor deve ser maior que zero" value={0} />
           <TextInput label="Desabilitado" value="Bloqueado" disabled />

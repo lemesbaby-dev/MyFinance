@@ -10,7 +10,6 @@
 
 <style>
   .ui-input { width: 100%; min-height: var(--field-h); background: var(--field-bg); border: var(--bw-2) solid var(--border-subtle); border-radius: var(--field-radius); padding: 0 var(--space-3); font-weight: var(--fw-bold); color: var(--text-strong); accent-color: var(--focus-ring); }
-  .ui-input[type='date']::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.75; margin-inline-start: var(--space-2); }
   .ui-input[aria-invalid='true'] { border-color: var(--color-expense); background: var(--surface-raised); }
   .ui-input:disabled { opacity: 0.5; }
   .ui-input:focus-visible { outline: var(--bw-2) solid var(--focus-ring); outline-offset: 0; border-color: var(--focus-ring); }

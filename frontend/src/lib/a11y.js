@@ -6,7 +6,7 @@ export function dialog(node, onclose) {
   const opener = document.activeElement;
   (node.querySelector('[data-autofocus]') ?? node.querySelector('input, select, textarea') ??node.querySelector('button:not([disabled])'))?.focus();
   const key = (e) => {
-    if (e.key === 'Escape') return onclose();
+    if (e.key === 'Escape') return e.target?.closest?.('[data-popup]') ? undefined : onclose(); // Esc em lista/calendário só fecha o popup
     if (e.key !== 'Tab') return;
     const items = [...node.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
     if (!items.length) return e.preventDefault();

@@ -7,6 +7,7 @@
   import MoneyInput from './ui/MoneyInput.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
+  import DatePicker from './ui/DatePicker.svelte';
   import Switch from './ui/Switch.svelte';
 
   // tx = lançamento existente (edição); sem tx = novo.
@@ -98,7 +99,7 @@
 
   <MoneyInput label="Valor (R$)" bind:value={amount} error={err('amount')} />
   <TextInput label="Descrição" bind:value={description} maxlength="200" placeholder={kind === 'income' ? 'Ex.: Salário' : 'Ex.: Aluguel'} error={err('description')} />
-  <TextInput label={kind === 'income' ? 'Data de recebimento' : 'Vencimento'} type="date" bind:value={date} error={err('date')} />
+  <DatePicker label={kind === 'income' ? 'Data de recebimento' : 'Vencimento'} bind:value={date} error={err('date')} />
 
   <Select label={kind === 'transfer' ? 'Sai da conta' : 'Conta'} bind:value={accountId} options={accOpts} />
 

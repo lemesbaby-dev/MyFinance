@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { moneyText, centsFromInput, signCents } from './money.js';
 import { confirmDialog, registerConfirmHost } from './confirm.js';
 import { dialog } from '../lib/a11y.js';
+import { monthGrid } from '../lib/finance.js';
 
 const nb = (s) => s.replace(/ /g, ' ');
 
@@ -28,6 +29,24 @@ test('MoneyInput: sinal negativo; zero nunca vira -0', () => {
   assert.equal(signCents(5000, false), 5000);
   assert.ok(Object.is(signCents(0, true), 0));
   assert.equal(centsFromInput('-R$ 50,00'), 5000); // o '-' do texto não conta como dígito
+});
+
+test('monthGrid: 42 dias, começa no domingo, contém o mês inteiro', () => {
+  const g = monthGrid('2026-10'); // 01/10/2026 é quinta
+  assert.equal(g.length, 42);
+  assert.equal(g[0], '2026-09-27');
+  assert.ok(g.includes('2026-10-01') && g.includes('2026-10-31'));
+  assert.equal(monthGrid('2026-02')[0], '2026-02-01'); // 01/02/2026 é domingo: sem dias do mês anterior
+});
+
+test('monthGrid: extremos 1900-01 e 2200-12 não lançam; vizinhos fora do intervalo viram null', () => {
+  const a = monthGrid('1900-01'); // 01/01/1900 é segunda: domingo anterior é 1899
+  assert.equal(a.length, 42);
+  assert.equal(a[0], null);
+  assert.equal(a[1], '1900-01-01');
+  const b = monthGrid('2200-12'); // sábado 1 + 41 dias entram em 2201
+  assert.equal(b.length, 42);
+  assert.ok(b.includes('2200-12-31') && b.at(-1) === null);
 });
 
 test('Confirm: resolve true/false; sem host nega', async () => {
