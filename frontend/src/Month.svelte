@@ -146,5 +146,5 @@
   .line { display: flex; justify-content: space-between; margin-bottom: 0.25rem; }
   .track { display: flex; height: 0.5rem; background: color-mix(in srgb, var(--line) 55%, transparent); border-radius: 99px; overflow: hidden; }
   .track i { background: var(--out); }
-  .fab { position: fixed; right: 1.25rem; bottom: calc(4.5rem + env(safe-area-inset-bottom)); box-shadow: 0 6px 18px rgb(0 0 0 / 0.25); padding: 0.85rem 1.4rem; z-index: 5; }
+  .fab { position: fixed; right: 1.25rem; bottom: calc(4.5rem + env(safe-area-inset-bottom)); box-shadow: var(--shadow-lift); padding: 0.85rem 1.4rem; z-index: 5; }
 </style>

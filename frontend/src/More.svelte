@@ -2,10 +2,14 @@
   import { app, dismissRejected } from './lib/app.svelte.js';
   import { sync } from './lib/sync.js';
   import { api } from './lib/api.js';
+  import { getTheme, getCvd, setTheme, setCvd } from './lib/theme.js';
 
   import { onMount } from 'svelte';
 
   let { onlogout, ondelete } = $props();
+  let theme = $state(getTheme());
+  let cvd = $state(getCvd());
+  const THEMES = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro']];
   let busy = $state(false);
   let canPrompt = $state(!!window.__installPrompt);
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -59,6 +63,22 @@
     try { await sync(); } finally { busy = false; }
   }
 </script>
+
+<section class="pad">
+  <h2>Aparência</h2>
+  <div class="card">
+    <span class="field-label" id="tema-l">Tema</span>
+    <div class="seg" role="group" aria-labelledby="tema-l">
+      {#each THEMES as [v, label] (v)}
+        <button type="button" class:on={theme === v} aria-pressed={theme === v} onclick={() => { theme = v; setTheme(v); }}>{label}</button>
+      {/each}
+    </div>
+    <div class="opt">
+      <div class="grow"><strong id="cvd-l">Cores para daltonismo</strong><span class="muted small">Usa uma paleta separável por luminância e matiz azul-laranja</span></div>
+      <button type="button" class="switch" class:on={cvd} role="switch" aria-checked={cvd} aria-labelledby="cvd-l" onclick={() => { cvd = !cvd; setCvd(cvd); }}><i></i></button>
+    </div>
+  </div>
+</section>
 
 <section class="pad">
   <h2>Cartão de crédito <span class="badge">Em breve</span></h2>
@@ -129,3 +149,16 @@
   {/if}
   {#if dataError}<p class="err" role="alert">{dataError}</p>{/if}
 </section>
+
+<style>
+  .field-label { display: block; font-size: 0.875rem; color: var(--muted); margin-bottom: var(--space-2); }
+  .card .seg { background: var(--surface-sunken); border-color: transparent; border-radius: var(--radius-2); padding: var(--space-1); gap: var(--space-1); }
+  .card .seg button { min-height: var(--tap); border-radius: var(--radius-1); font-weight: var(--fw-bold); color: var(--text-muted); }
+  .card .seg button.on { background: var(--surface-raised); color: var(--text-strong); border: var(--bw-1) solid var(--border-subtle); }
+  .opt { display: flex; align-items: center; gap: var(--space-3); }
+  .opt .grow { flex: 1; display: grid; gap: var(--space-1); }
+  .switch { position: relative; flex: none; width: 52px; height: 30px; border: 0; padding: 0; border-radius: var(--radius-pill); background: var(--border-strong); }
+  .switch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: var(--radius-pill); background: var(--surface-raised); transition: transform var(--dur-base) var(--ease-out); }
+  .switch.on { background: var(--brand); }
+  .switch.on i { transform: translateX(22px); background: var(--on-brand); }
+</style>

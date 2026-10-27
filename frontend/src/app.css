@@ -1,29 +1,19 @@
+
+/* Nomes antigos = aliases dos tokens (tokens.css). Migração das telas para os tokens: Fase 4 (issue #1). */
 :root {
-  --paper: #f2f4f1;
-  --ink: #17262b;
-  --muted: #5b6b6f;
-  --line: #d3dad6;
-  --in: #1f7a5c;
-  --out: #a8324e;
-  --proj: #3d4bd6;
-  --focus: #3d4bd6;
-  --radius: 10px;
-  font-family: 'Instrument Sans Variable', system-ui, sans-serif;
+  --paper: var(--surface-page);
+  --ink: var(--text-body);
+  --muted: var(--text-muted);
+  --line: var(--border-subtle);
+  --in: var(--color-income);
+  --out: var(--color-expense);
+  --proj: var(--color-forecast);
+  --focus: var(--focus-ring);
+  --radius: var(--radius-1);
+  font-family: var(--font-text);
   color: var(--ink);
   background: var(--paper);
-  line-height: 1.45;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #10191c;
-    --ink: #e9efec;
-    --muted: #93a3a6;
-    --line: #26363a;
-    --in: #4cc29a;
-    --out: #f0708f;
-    --proj: #8e9bff;
-    --focus: #8e9bff;
-  }
+  line-height: var(--lh-body);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--paper); }
@@ -64,7 +54,7 @@ button { cursor: pointer; }
 /* ---- compartilhados entre as telas ---- */
 .pad { padding: 0 1.25rem; }
 .small { font-size: 0.8125rem; }
-h2 { font-size: 1rem; margin: 1.75rem 0 0.5rem; font-weight: 650; }
+h2 { font-family: var(--font-display); font-size: 1rem; margin: 1.75rem 0 0.5rem; font-weight: 650; }
 .rows, .bars { list-style: none; margin: 0; padding: 0; }
 .rows li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; padding: 0.7rem 0; border-top: 1px solid var(--line); }
 .rows li:last-child { border-bottom: 1px solid var(--line); }
@@ -73,7 +63,7 @@ h2 { font-size: 1rem; margin: 1.75rem 0 0.5rem; font-weight: 650; }
 .rows .grow strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rows li.late strong { color: var(--out); }
 .rows li.done strong { color: var(--muted); }
-.scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 10; }
+.scrim { position: fixed; inset: 0; background: var(--surface-overlay); z-index: 10; }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; max-height: 92dvh; overflow-y: auto; z-index: 11;
   max-width: 42rem; margin: 0 auto; padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
