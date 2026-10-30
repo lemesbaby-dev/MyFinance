@@ -1,6 +1,7 @@
 <script>
   import { app, saveAccount, deleteAccount } from './lib/app.svelte.js';
   import { balances, monthEnd, monthOf, todayISO } from './lib/finance.js';
+  import AdjustSheet from './AdjustSheet.svelte';
   import MoneyInput from './ui/MoneyInput.svelte';
   import FormSheet from './ui/FormSheet.svelte';
   import Card from './ui/Card.svelte';
@@ -25,6 +26,7 @@
   let errField = $state('');
   const uid = $props.id();
   let showArchived = $state(false);
+  let adjusting = $state(null); // conta sendo ajustada
 
   const bal = $derived(balances(app.accounts, app.transactions, monthEnd(monthOf(today)), app.rejectedIds));
   const by = $derived(Object.fromEntries(bal.all.map((a) => [a.id, a])));
@@ -56,6 +58,13 @@
     try { await deleteAccount(form.id); form = null; } catch (err) { error = err.message; } finally { busy = false; }
   }
 
+  async function adjustFromForm() {
+    const a = app.accounts.find((x) => x.id === form.id);
+    const dirty = a.name !== form.name || a.type !== form.type || a.initial_balance_cents !== form.balance;
+    if (dirty && !(await confirmDialog({ title: 'Descartar as alterações da conta?', confirmLabel: 'Descartar' }))) return;
+    adjusting = a; form = null;
+  }
+
   const refreshToday = () => (today = todayISO());
 </script>
 
@@ -75,7 +84,13 @@
               <div class="m">{TYPES[a.type]}</div>
               {#if by[a.id]}<div class="m">Previsto no mês: <Money cents={by[a.id].projected_cents} /></div>{/if}
             </div>
-            <Money cents={by[a.id]?.current_cents ?? 0} size="md" />
+            {#if a.archived}
+              <Money cents={by[a.id]?.current_cents ?? 0} size="md" />
+            {:else}
+              <button type="button" class="bal" aria-label="Ajustar saldo de {a.name}" onclick={() => (adjusting = a)}>
+                <Money cents={by[a.id]?.current_cents ?? 0} size="md" /><Icon name="sliders" size="sm" />
+              </button>
+            {/if}
             <IconButton icon="edit" label="Editar {a.name}" tone="muted" onclick={() => open(a)} />
           </li>
         {/each}
@@ -90,11 +105,17 @@
   </div>
 </section>
 
+{#if adjusting}<AdjustSheet account={adjusting} onclose={() => (adjusting = null)} />{/if}
+
 {#if form}
   <FormSheet title={form.id ? 'Editar conta' : 'Nova conta'} onclose={() => (form = null)} onsubmit={submit} {busy} error={errField ? '' : error} onremove={form.id ? remove : undefined} removeLabel="Excluir conta">
     <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
     <Select label="Tipo" bind:value={form.type} options={TYPE_OPTS} />
     <MoneyInput label="Saldo inicial (R$)" bind:value={form.balance} signed help="Digite só os números; “-” alterna negativo" />
+    {#if form.id && !form.archived}
+      <Button variant="secondary" block onclick={adjustFromForm}>Ajustar saldo atual</Button>
+      <p class="help">Para corrigir o saldo de hoje sem alterar o histórico, use Ajustar saldo.</p>
+    {/if}
     {#if form.id}
       <div class="opt"><span id="{uid}-arq">Arquivada (some das listas e dos saldos)</span><Switch bind:checked={form.archived} labelledby="{uid}-arq" /></div>
     {/if}
@@ -110,6 +131,9 @@
   .main { flex: 1; min-width: 0; }
   .t { font-weight: var(--fw-bold); color: var(--text-strong); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
   .m { margin-top: var(--space-1); font-size: var(--fs-1); font-weight: var(--fw-bold); color: var(--text-muted); }
+  .bal { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--tap); padding: 0 var(--space-1); background: none; border: 0; border-radius: var(--radius-2); color: var(--text-muted); cursor: pointer; }
+  .bal:focus-visible { outline: var(--bw-2) solid var(--focus-ring); outline-offset: var(--bw-2); }
+  .help { margin: calc(-1 * var(--space-2)) 0 0; font-size: var(--fs-1); color: var(--text-muted); }
   .acts { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: space-between; }
   .opt { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
 </style>

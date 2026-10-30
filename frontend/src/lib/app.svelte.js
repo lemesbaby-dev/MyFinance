@@ -4,7 +4,7 @@
 import * as db from './db.js';
 import * as sync from './sync.js';
 import { uuidv7 } from './uuid.js';
-import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO } from './finance.js';
+import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment } from './finance.js';
 
 export const app = $state({
   ready: false,
@@ -129,12 +129,14 @@ export async function deleteAccount(id) {
 // ---------- categorias ----------
 
 export const saveCategory = async (id, f) => {
-  await sync.save('category', id ?? uuidv7(), { name: f.name.trim(), kind: f.kind, parent_id: f.parent_id || null, color: f.color ?? '' });
+  if (id && app.categories.find((c) => c.id === id)?.is_system) throw new Error('Categoria do sistema não pode ser editada.');
+  await sync.save('category', id ?? uuidv7(), { name: f.name.trim(), kind: f.kind, parent_id: f.parent_id || null, color: f.color ?? '', is_system: false });
   await reload();
 };
 
 // O servidor não cascateia: o app solta as referências antes de excluir.
 export async function deleteCategory(id) {
+  if (app.categories.find((c) => c.id === id)?.is_system) throw new Error('Categoria do sistema não pode ser excluída.');
   await sync.saveMany([
     ...app.transactions.filter((x) => x.category_id === id).map((t) => put('transaction', t.id, { ...doc(t), category_id: null })),
     ...app.recurrences.filter((x) => x.category_id === id).map((r) => put('recurrence', r.id, { ...doc(r), category_id: null })),
@@ -244,6 +246,41 @@ export const deleteRecurring = (tx, scope) => serial(async () => {
   }
   await reload();
 });
+
+// Ids fixos: dois aparelhos offline criando "Ajuste de saldo" gravam o MESMO documento (nunca duplica).
+export const adjustCategoryId = (kind) => `sys-adjust-${kind}`;
+
+/** Saldo atual da conta: o mesmo `balances().current_cents` do card (só efetivados). */
+export const currentBalance = (id) =>
+  balances(app.accounts, app.transactions, todayISO(), app.rejectedIds).all.find((a) => a.id === id)?.current_cents ?? 0;
+
+/**
+ * Lança a diferença entre o saldo real (banco) e o saldo atual da conta como receita/despesa já efetivada.
+ * Devolve { id, kind, amount_cents } do lançamento criado, ou null se o saldo já confere.
+ * Saldo atual: ver currentBalance.
+ */
+export async function adjustAccount(accountId, realCents, { date = todayISO(), categoryId = '' } = {}) {
+  const acc = app.accounts.find((a) => a.id === accountId);
+  if (!acc || acc.archived) throw new Error('Conta indisponível para ajuste.');
+  if (!validCents(realCents)) throw new Error('Saldo inválido ou fora do limite.');
+  if (!isValidISO(date)) throw new Error('Data inválida (use uma data entre 1900 e 2200).');
+  const adj = adjustment(currentBalance(accountId), realCents);
+  if (!adj) return null;
+  checkTx(adj.amount_cents, date);
+  const sysId = adjustCategoryId(adj.kind);
+  const items = [];
+  if (!categoryId) {
+    categoryId = sysId;
+    if (!app.categories.some((c) => c.id === sysId)) items.push(put('category', sysId, { name: 'Ajuste de saldo', kind: adj.kind, parent_id: null, color: '', is_system: true }));
+  }
+  const id = uuidv7();
+  items.push(put('transaction', id, txDoc({
+    ...adj, description: 'Ajuste de saldo', date, status: 'paid', paid_at: date, account_id: accountId, category_id: categoryId, is_adjustment: true,
+  })));
+  await sync.saveMany(items);
+  await reload();
+  return { id, ...adj };
+}
 
 export async function deleteTx(tx) {
   await sync.remove('transaction', tx.id);

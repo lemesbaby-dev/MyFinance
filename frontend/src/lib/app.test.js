@@ -295,3 +295,21 @@ test('gravações locais respeitam os limites do servidor (valor < 1e14, data 19
   await A.saveTx(null, { ...base, amount_cents: 1e14 - 1 });
   assert.equal(app.transactions.length, 1);
 });
+
+test('adjustAccount: lança despesa efetivada, cria a categoria de sistema uma vez e some ao excluir', async () => {
+  await A.init({ id: 'u1', email: 'a@x.com' });
+  await A.saveAccount(null, { name: 'Conta', type: 'checking', initial_balance_cents: 600000 });
+  const acc = app.accounts[0];
+  const r = await A.adjustAccount(acc.id, 500000);
+  assert.deepEqual([r.kind, r.amount_cents], ['expense', 100000]);
+  const t = app.transactions.find((x) => x.id === r.id);
+  assert.equal(t.is_adjustment, true);
+  assert.equal(t.status, 'paid');
+  assert.equal(t.category_id, A.adjustCategoryId('expense'));
+  assert.equal(app.categories.filter((c) => c.is_system).length, 1);
+  assert.equal(await A.adjustAccount(acc.id, 500000), null); // já confere
+  await A.adjustAccount(acc.id, 520000); // receita de 200 reaproveita categoria diferente (income)
+  assert.equal(app.categories.filter((c) => c.is_system).length, 2);
+  await A.deleteTx(t);
+  await assert.rejects(A.deleteCategory(A.adjustCategoryId('expense')));
+});

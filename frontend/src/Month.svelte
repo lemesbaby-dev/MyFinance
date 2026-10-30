@@ -42,7 +42,7 @@
   const flow = $derived.by(() => {
     const o = { paid: 0, pending: 0 };
     for (const t of app.transactions) {
-      if (t.kind === 'transfer' || !(t.status in o) || archived.has(t.account_id) || app.rejectedIds.has(t.id) || monthOf(t.date) !== month) continue;
+      if (t.kind === 'transfer' || t.is_adjustment || !(t.status in o) || archived.has(t.account_id) || app.rejectedIds.has(t.id) || monthOf(t.date) !== month) continue;
       o[t.status] += t.amount_cents;
     }
     return o;
@@ -81,7 +81,7 @@
   ].filter(Boolean).join(' · ');
   const menuOf = (t) => [
     { label: 'Editar', icon: 'edit', onselect: () => (form = { tx: t }) },
-    ...(t.status === 'paid' ? [{ label: 'Desfazer', icon: 'undo', onselect: () => toggle(t) }] : []),
+    ...(t.status === 'paid' && !t.is_adjustment ? [{ label: 'Desfazer', icon: 'undo', onselect: () => toggle(t) }] : []),
     { label: 'Excluir', icon: 'trash', danger: true, onselect: () => removeOne(t) },
   ];
 </script>
@@ -98,6 +98,7 @@
     state={rowState({ paid: t.status === 'paid', date: t.date, today })}
     cat={t.category_id ? catOf(t.category_id, catColor) : 0}
     glyph={GLYPH[t.kind]}
+    tag={t.is_adjustment ? 'Ajuste' : ''}
     actionLabel={DO_LABEL[t.kind]}
     onaction={() => toggle(t)}
     menu={menuOf(t)}
