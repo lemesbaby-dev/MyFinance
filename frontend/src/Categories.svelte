@@ -21,7 +21,7 @@
   let busy = $state(false);
 
   const catColor = $derived(catMap(app.categories.map((c) => c.id)));
-  const tops = (kind) => app.categories.filter((c) => c.kind === kind && !c.parent_id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const tops = (kind) => app.categories.filter((c) => c.kind === kind && !c.parent_id && !c.is_system).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const kids = (id) => app.categories.filter((c) => c.parent_id === id).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   // 1 nível de subcategoria: só categorias principais do mesmo tipo (e nunca ela mesma) servem de mãe.
   const parents = $derived(form ? tops(form.kind).filter((c) => c.id !== form.id) : []);

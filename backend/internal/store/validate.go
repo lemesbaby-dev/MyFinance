@@ -24,6 +24,8 @@ type categoryData struct {
 	Kind     string  `json:"kind"`
 	ParentID *string `json:"parent_id"`
 	Color    string  `json:"color"`
+	// IsSystem: categoria criada pelo app (ex.: "Ajuste de saldo"); a interface não deixa editar nem excluir.
+	IsSystem bool `json:"is_system"`
 }
 
 type recurrenceData struct {
@@ -56,6 +58,8 @@ type transactionData struct {
 	InstallmentTotal  *int    `json:"installment_total"`
 	InstallmentGroup  *string `json:"installment_group"`
 	Notes             string  `json:"notes"`
+	// IsAdjustment: ajuste de saldo; conta no saldo da conta mas fica fora dos totais e dos gastos por categoria.
+	IsAdjustment bool `json:"is_adjustment"`
 }
 
 const (

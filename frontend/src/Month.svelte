@@ -42,7 +42,7 @@
   const flow = $derived.by(() => {
     const o = { paid: 0, pending: 0 };
     for (const t of app.transactions) {
-      if (t.kind === 'transfer' || !(t.status in o) || archived.has(t.account_id) || app.rejectedIds.has(t.id) || monthOf(t.date) !== month) continue;
+      if (t.kind === 'transfer' || t.is_adjustment || !(t.status in o) || archived.has(t.account_id) || app.rejectedIds.has(t.id) || monthOf(t.date) !== month) continue;
       o[t.status] += t.amount_cents;
     }
     return o;
@@ -77,6 +77,7 @@
     accName(t.account_id) + (t.kind === 'transfer' ? ` → ${accName(t.transfer_account_id)}` : ''),
     t.category_id ? catName(t.category_id) : '',
     t.recurrence_id ? 'repete' : '',
+    t.is_adjustment ? 'ajuste' : '',
     app.rejectedIds.has(t.id) ? 'não enviado' : '',
   ].filter(Boolean).join(' · ');
   const menuOf = (t) => [

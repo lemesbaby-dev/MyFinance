@@ -137,7 +137,7 @@ export const horizon = (today, months = 12) => addMonths(today, months);
 export const txDoc = (f) => ({
   kind: 'expense', description: '', amount_cents: 0, date: '', status: 'pending', paid_at: null,
   account_id: '', transfer_account_id: null, category_id: null, recurrence_id: null,
-  installment_no: null, installment_total: null, installment_group: null, notes: '', ...f,
+  installment_no: null, installment_total: null, installment_group: null, notes: '', is_adjustment: false, ...f,
 });
 
 /**
@@ -175,6 +175,14 @@ export function splitInstallments(total, n, firstISO) {
   return Array.from({ length: n }, (_, i) => ({
     no: i + 1, total: n, amount_cents: base + (i < rest ? 1 : 0), date: addMonths(firstISO, i),
   }));
+}
+
+// ---------- ajuste de saldo ----------
+
+/** Diferença entre o saldo real (banco) e o do app, em centavos inteiros. Devolve o lançamento que fecha a conta, ou null se já confere. */
+export function adjustment(currentCents, realCents) {
+  const diff = realCents - currentCents;
+  return diff === 0 ? null : { kind: diff > 0 ? 'income' : 'expense', amount_cents: Math.abs(diff) };
 }
 
 // ---------- saldos ----------
@@ -240,7 +248,7 @@ export function monthView(allTxs, month, filter, today, archived = new Set(), ex
   let income = 0, expense = 0;
   const spend = new Map();
   for (const t of rows) {
-    if (excluded.has(t.id)) continue;
+    if (excluded.has(t.id) || t.is_adjustment) continue; // ajuste muda o saldo, não as análises
     if (t.kind === 'income') income += t.amount_cents;
     else if (t.kind === 'expense') {
       expense += t.amount_cents;

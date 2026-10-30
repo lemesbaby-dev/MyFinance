@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { money, parseMoney } from './format.js';
 import {
   addMonths, addDays, occurrences, splitInstallments, balances, monthView, materialize, horizon, shiftMonth, monthEnd,
-  validateRule, parseISO, txDoc, isValidISO, validCents,
+  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment,
 } from './finance.js';
 
 const nbsp = (s) => s.replace(/ /g, ' ');
@@ -282,4 +282,30 @@ test('saldos e visão do mês ignoram recusados (ids em `excluded`)', () => {
   assert.equal(v.rows.length, 2, 'continua na lista (marcado pela interface)');
   assert.equal(v.expense_cents, 100);
   assert.deepEqual(v.spending, [{ category_id: null, cents: 100 }]);
+});
+
+test('adjustment: diferença positiva, negativa, zero e saldo negativo', () => {
+  assert.deepEqual(adjustment(600000, 500000), { kind: 'expense', amount_cents: 100000 });
+  assert.deepEqual(adjustment(500000, 550000), { kind: 'income', amount_cents: 50000 });
+  assert.equal(adjustment(500000, 500000), null);
+  assert.deepEqual(adjustment(-20000, -5000), { kind: 'income', amount_cents: 15000 });
+});
+
+test('ajuste muda o saldo da conta, mas não os totais nem os gastos por categoria do mês', () => {
+  const acc = [{ id: 'a', name: 'A', type: 'checking', initial_balance_cents: 0, archived: false }];
+  const t = (o) => txDoc({ account_id: 'a', status: 'paid', paid_at: '2026-10-10', date: '2026-10-10', ...o });
+  const txs = [
+    { id: '1', ...t({ kind: 'income', description: 'Salário', amount_cents: 600000 }) },
+    { id: '2', ...t({ kind: 'expense', description: 'Ajuste de saldo', amount_cents: 100000, category_id: 'sys', is_adjustment: true }) },
+    // pendente/futuro não entra no saldo atual (e portanto na diferença)
+    { id: '3', ...t({ kind: 'expense', description: 'Futuro', amount_cents: 999, status: 'pending', paid_at: null, date: '2026-12-01' }) },
+  ];
+  assert.equal(balances(acc, txs, '2026-10-31').accounts[0].current_cents, 500000);
+  const v = monthView(txs, '2026-10', 'all', '2026-10-15');
+  assert.equal(v.expense_cents, 0);
+  assert.equal(v.income_cents, 600000);
+  assert.deepEqual(v.spending, []);
+  assert.equal(v.rows.length, 2); // o ajuste continua na lista
+  // excluir o ajuste devolve o saldo anterior
+  assert.equal(balances(acc, txs.filter((x) => x.id !== '2'), '2026-10-31').accounts[0].current_cents, 600000);
 });

@@ -307,3 +307,28 @@ func TestResetApagaDadosEPropagaTombstones(t *testing.T) {
 		t.Fatalf("conta continua usável: %+v", res)
 	}
 }
+
+func TestAjusteDeSaldoSincroniza(t *testing.T) {
+	st, uid := open(t)
+	st.Push(uid, []Op{acc("a1")})
+	cat := Op{OpID: "op-c", Kind: "category", ID: "sys-adjust-expense", Action: "upsert",
+		Data: json.RawMessage(`{"name":"Ajuste de saldo","kind":"expense","parent_id":null,"color":"","is_system":true}`)}
+	tx := Op{OpID: "op-t", Kind: "transaction", ID: "t1", Action: "upsert", Data: json.RawMessage(
+		`{"kind":"expense","description":"Ajuste de saldo","amount_cents":100000,"date":"2026-10-30","status":"paid","paid_at":"2026-10-30",` +
+			`"account_id":"a1","category_id":"sys-adjust-expense","is_adjustment":true}`)}
+	res, _ := st.Push(uid, []Op{cat, tx})
+	if res[0].Status != "ok" || res[1].Status != "ok" {
+		t.Fatalf("ajuste recusado: %+v", res)
+	}
+	ch, _, _, err := st.Pull(uid, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for _, c := range ch {
+		got += string(c.Data)
+	}
+	if !strings.Contains(got, `"is_adjustment":true`) || !strings.Contains(got, `"is_system":true`) {
+		t.Errorf("flags não voltaram no pull: %s", got)
+	}
+}

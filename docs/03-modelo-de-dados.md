@@ -26,12 +26,12 @@ Formato dos documentos (`data`); ids são UUIDv7 gerados no app; dinheiro em cen
 
 ```
 account:     name, type(checking|cash|savings|investment), initial_balance_cents, archived
-category:    name, kind(income|expense), parent_id?, color
+category:    name, kind(income|expense), parent_id?, color, is_system
 recurrence:  kind, description, amount_cents>0, account_id, category_id?, frequency(daily|weekly|monthly|yearly),
              interval_n(1..1000), start_date, end_date?, active
 transaction: kind(income|expense|transfer), description, amount_cents>0, date, status(pending|paid), paid_at?,
              account_id, transfer_account_id?, category_id?, recurrence_id?,
-             installment_no?, installment_total?(≤120), installment_group?, notes
+             installment_no?, installment_total?(≤120), installment_group?, notes, is_adjustment
 ```
 Regras validadas no servidor: `paid_at` existe se, e só se, `status=paid`; transferência exige destino válido e
 diferente da origem; referências `account_id`, `transfer_account_id` e `recurrence_id` existem, não foram
