@@ -1,6 +1,6 @@
 <script>
-  import { app, adjustAccount, deleteTx } from './lib/app.svelte.js';
-  import { balances, monthEnd, monthOf, todayISO, adjustment } from './lib/finance.js';
+  import { app, adjustAccount, currentBalance, deleteTx } from './lib/app.svelte.js';
+  import { todayISO, adjustment } from './lib/finance.js';
   import { money } from './lib/format.js';
   import FormSheet from './ui/FormSheet.svelte';
   import MoneyInput from './ui/MoneyInput.svelte';
@@ -12,9 +12,8 @@
   // Informa o saldo real do banco; o app lança a diferença como receita/despesa efetivada ("Ajuste de saldo").
   let { account, onclose } = $props();
 
-  // Mesma conta do card: balances().current_cents (só efetivados). Fixado ao abrir, para a prévia não pular com o sync.
-  /* svelte-ignore state_referenced_locally */
-  const current = balances(app.accounts, app.transactions, monthEnd(monthOf(todayISO())), app.rejectedIds).all.find((a) => a.id === account.id)?.current_cents ?? 0;
+  // Mesmo cálculo de adjustAccount (currentBalance): a prévia acompanha o que será gravado.
+  const current = $derived(currentBalance(account.id));
   /* svelte-ignore state_referenced_locally */
   let real = $state(current);
   let date = $state(todayISO());
@@ -33,7 +32,8 @@
     try {
       const r = await adjustAccount(account.id, real, { date, categoryId });
       onclose();
-      toast('Saldo ajustado', { tone: 'ok', actionLabel: 'Desfazer', onaction: () => r && deleteTx({ id: r.id }).catch(() => {}) });
+      if (!r) return toast('Saldo já confere');
+      toast('Saldo ajustado', { tone: 'ok', actionLabel: 'Desfazer', onaction: () => deleteTx({ id: r.id }).catch(() => {}) });
     } catch (err) { error = err.message; } finally { busy = false; }
   }
 </script>

@@ -62,6 +62,8 @@
       kind, description: d, amount_cents: cents, date, account_id: accountId,
       transfer_account_id: kind === 'transfer' ? toAccountId : null,
       category_id: kind !== 'transfer' && categoryId ? categoryId : null,
+      // mudou tipo ou categoria do ajuste: deixa de ser ajuste (volta a entrar nos totais)
+      is_adjustment: !!tx?.is_adjustment && kind === tx.kind && (categoryId || null) === tx.category_id,
     };
   }
 

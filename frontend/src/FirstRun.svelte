@@ -9,7 +9,7 @@
 
   let name = $state('Conta principal');
   let balance = $state(0); // centavos
-  let seed = $state(app.categories.length === 0);
+  let seed = $state(!app.categories.some((c) => !c.is_system));
   let error = $state('');
   let busy = $state(false);
 

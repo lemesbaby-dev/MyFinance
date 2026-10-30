@@ -77,12 +77,11 @@
     accName(t.account_id) + (t.kind === 'transfer' ? ` → ${accName(t.transfer_account_id)}` : ''),
     t.category_id ? catName(t.category_id) : '',
     t.recurrence_id ? 'repete' : '',
-    t.is_adjustment ? 'ajuste' : '',
     app.rejectedIds.has(t.id) ? 'não enviado' : '',
   ].filter(Boolean).join(' · ');
   const menuOf = (t) => [
     { label: 'Editar', icon: 'edit', onselect: () => (form = { tx: t }) },
-    ...(t.status === 'paid' ? [{ label: 'Desfazer', icon: 'undo', onselect: () => toggle(t) }] : []),
+    ...(t.status === 'paid' && !t.is_adjustment ? [{ label: 'Desfazer', icon: 'undo', onselect: () => toggle(t) }] : []),
     { label: 'Excluir', icon: 'trash', danger: true, onselect: () => removeOne(t) },
   ];
 </script>
@@ -99,6 +98,7 @@
     state={rowState({ paid: t.status === 'paid', date: t.date, today })}
     cat={t.category_id ? catOf(t.category_id, catColor) : 0}
     glyph={GLYPH[t.kind]}
+    tag={t.is_adjustment ? 'Ajuste' : ''}
     actionLabel={DO_LABEL[t.kind]}
     onaction={() => toggle(t)}
     menu={menuOf(t)}

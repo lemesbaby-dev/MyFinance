@@ -58,7 +58,13 @@
     try { await deleteAccount(form.id); form = null; } catch (err) { error = err.message; } finally { busy = false; }
   }
 
-  const a0 = (id) => app.accounts.find((a) => a.id === id);
+  async function adjustFromForm() {
+    const a = app.accounts.find((x) => x.id === form.id);
+    const dirty = a.name !== form.name || a.type !== form.type || a.initial_balance_cents !== form.balance;
+    if (dirty && !(await confirmDialog({ title: 'Descartar as alterações da conta?', confirmLabel: 'Descartar' }))) return;
+    adjusting = a; form = null;
+  }
+
   const refreshToday = () => (today = todayISO());
 </script>
 
@@ -106,8 +112,8 @@
     <TextInput label="Nome" bind:value={form.name} maxlength="200" error={errField === 'name' ? error : ''} />
     <Select label="Tipo" bind:value={form.type} options={TYPE_OPTS} />
     <MoneyInput label="Saldo inicial (R$)" bind:value={form.balance} signed help="Digite só os números; “-” alterna negativo" />
-    {#if form.id && !form.archived && !a0(form.id)?.archived}
-      <Button variant="secondary" block onclick={() => { adjusting = a0(form.id); form = null; }}>Ajustar saldo atual</Button>
+    {#if form.id && !form.archived}
+      <Button variant="secondary" block onclick={adjustFromForm}>Ajustar saldo atual</Button>
       <p class="help">Para corrigir o saldo de hoje sem alterar o histórico, use Ajustar saldo.</p>
     {/if}
     {#if form.id}

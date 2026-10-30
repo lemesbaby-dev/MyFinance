@@ -129,6 +129,7 @@ export async function deleteAccount(id) {
 // ---------- categorias ----------
 
 export const saveCategory = async (id, f) => {
+  if (id && app.categories.find((c) => c.id === id)?.is_system) throw new Error('Categoria do sistema não pode ser editada.');
   await sync.save('category', id ?? uuidv7(), { name: f.name.trim(), kind: f.kind, parent_id: f.parent_id || null, color: f.color ?? '', is_system: false });
   await reload();
 };
@@ -249,18 +250,21 @@ export const deleteRecurring = (tx, scope) => serial(async () => {
 // Ids fixos: dois aparelhos offline criando "Ajuste de saldo" gravam o MESMO documento (nunca duplica).
 export const adjustCategoryId = (kind) => `sys-adjust-${kind}`;
 
+/** Saldo atual da conta: o mesmo `balances().current_cents` do card (só efetivados). */
+export const currentBalance = (id) =>
+  balances(app.accounts, app.transactions, todayISO(), app.rejectedIds).all.find((a) => a.id === id)?.current_cents ?? 0;
+
 /**
  * Lança a diferença entre o saldo real (banco) e o saldo atual da conta como receita/despesa já efetivada.
  * Devolve { id, kind, amount_cents } do lançamento criado, ou null se o saldo já confere.
- * Saldo atual = o mesmo `balances().current_cents` do card da conta (só efetivados).
+ * Saldo atual: ver currentBalance.
  */
 export async function adjustAccount(accountId, realCents, { date = todayISO(), categoryId = '' } = {}) {
   const acc = app.accounts.find((a) => a.id === accountId);
   if (!acc || acc.archived) throw new Error('Conta indisponível para ajuste.');
   if (!validCents(realCents)) throw new Error('Saldo inválido ou fora do limite.');
   if (!isValidISO(date)) throw new Error('Data inválida (use uma data entre 1900 e 2200).');
-  const current = balances(app.accounts, app.transactions, date, app.rejectedIds).all.find((a) => a.id === accountId)?.current_cents ?? 0;
-  const adj = adjustment(current, realCents);
+  const adj = adjustment(currentBalance(accountId), realCents);
   if (!adj) return null;
   checkTx(adj.amount_cents, date);
   const sysId = adjustCategoryId(adj.kind);
