@@ -313,3 +313,51 @@ test('adjustAccount: lança despesa efetivada, cria a categoria de sistema uma v
   await A.deleteTx(t);
   await assert.rejects(A.deleteCategory(A.adjustCategoryId('expense')));
 });
+
+test('createRecurrence: intervalo 2 pula um mês sim, um não', async () => {
+  await A.saveAccount(null, { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  await A.createRecurrence({ kind: 'expense', description: 'Bimestral', amount_cents: 5000, account_id: app.accounts[0].id, frequency: 'monthly', interval_n: 2, start_date: START });
+  const r = app.recurrences[0];
+  assert.equal(r.interval_n, 2);
+  assert.deepEqual(occ(r.id).slice(0, 4).map((t) => t.date), [0, 2, 4, 6].map((k) => addMonths(START, k)));
+});
+
+test('createRecurrence: data final corta as ocorrências; antes do início é recusada', async () => {
+  await A.saveAccount(null, { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  const base = { kind: 'expense', description: 'Curso', amount_cents: 5000, account_id: app.accounts[0].id, frequency: 'monthly', start_date: START };
+  const end = addDays(addMonths(START, 3), -1); // véspera da 4ª ocorrência
+  await A.createRecurrence({ ...base, end_date: end });
+  const r = app.recurrences[0];
+  assert.equal(r.end_date, end);
+  assert.deepEqual(occ(r.id).map((t) => t.date), [0, 1, 2].map((k) => addMonths(START, k)));
+  await A.extendRecurrences();
+  assert.equal(occ(r.id).length, 3, 'estender não passa da data final');
+  await assert.rejects(A.createRecurrence({ ...base, end_date: addDays(START, -1) }), /data final/);
+  assert.equal(app.recurrences.length, 1, 'regra inválida não é gravada');
+});
+
+test('notas: persistem, são preservadas na edição, limpam com vazio e vão em todas as parcelas', async () => {
+  await A.saveAccount('acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  const base = { kind: 'expense', description: 'Mercado', amount_cents: 100, date: START, account_id: 'acc' };
+  await A.saveTx(null, { ...base, notes: 'nota fiscal 123' });
+  const id = app.transactions[0].id;
+  assert.equal(app.transactions[0].notes, 'nota fiscal 123');
+  await A.saveTx(id, { amount_cents: 200 }); // edição sem o campo: preserva
+  assert.equal(app.transactions[0].notes, 'nota fiscal 123');
+  await A.saveTx(id, { notes: '' }); // limpar
+  assert.equal(app.transactions[0].notes, '');
+  await A.createInstallments({ ...base, description: 'TV', notes: 'garantia até 2030' }, 3);
+  const parts = app.transactions.filter((t) => t.installment_group);
+  assert.deepEqual(parts.map((t) => t.notes), Array(3).fill('garantia até 2030'));
+});
+
+test('notas em ocorrência de recorrência valem só para ela, mesmo editando "todos"', async () => {
+  const r = await seed();
+  const t = occ(r.id).find((x) => x.date > todayISO());
+  await A.editRecurring(t, 'all', { description: 'Aluguel novo', notes: 'reajuste', date: t.date });
+  const all = occ(r.id);
+  assert.equal(all.find((x) => x.id === t.id).notes, 'reajuste');
+  assert.equal(all.filter((x) => x.notes).length, 1);
+  assert.equal(rule(r.id).description, 'Aluguel novo');
+  assert.ok(!('notes' in rule(r.id)), 'regra não ganha campo novo');
+});

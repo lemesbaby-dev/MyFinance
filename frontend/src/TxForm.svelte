@@ -1,6 +1,6 @@
 <script>
   import { app, saveTx, createInstallments, createRecurrence, editRecurring } from './lib/app.svelte.js';
-  import { MAX_INSTALLMENTS, isValidISO, todayISO } from './lib/finance.js';
+  import { MAX_INSTALLMENTS, MAX_INTERVAL, isValidISO, todayISO } from './lib/finance.js';
   import Scope from './Scope.svelte';
   import FormSheet from './ui/FormSheet.svelte';
   import Segmented from './ui/Segmented.svelte';
@@ -33,6 +33,10 @@
   let done = $state(tx?.status === 'paid');
   let repeat = $state('none'); // none | daily | weekly | monthly | yearly
   let installments = $state(1);
+  let interval = $state(1); // repete a cada N dias/semanas/meses/anos
+  let endDate = $state(''); // fim opcional da repetição
+  /* svelte-ignore state_referenced_locally */
+  let notes = $state(tx?.notes ?? '');
   const uid = $props.id();
   let error = $state('');
   let errField = $state(''); // campo do erro de validação; vazio = erro geral (Banner)
@@ -43,6 +47,8 @@
   const cats = $derived(app.categories.filter((c) => c.kind === kind));
   const KINDS = [['expense', 'Despesa'], ['income', 'Receita'], ['transfer', 'Transferência']];
   const REPEATS = [['none', 'Não repete'], ['monthly', 'Todo mês'], ['weekly', 'Toda semana'], ['yearly', 'Todo ano'], ['daily', 'Todo dia']];
+  const UNITS = { daily: 'dias', weekly: 'semanas', monthly: 'meses', yearly: 'anos' };
+  const repeats = $derived(!editing && kind !== 'transfer' && repeat !== 'none');
   const accOpts = $derived(accounts.map((a) => [a.id, a.name]));
   const catOpts = $derived([['', 'Sem categoria'], ...cats.map((c) => [c.id, c.name])]);
   const err = (f) => (errField === f ? error : '');
@@ -56,6 +62,9 @@
     if (!accountId) throw bad('', 'Crie uma conta primeiro (aba Contas).');
     if (kind === 'transfer' && (!toAccountId || toAccountId === accountId)) throw bad('to', 'Escolha uma conta de destino diferente.');
     if (!editing && kind === 'expense' && repeat === 'none' && !(Number.isInteger(+installments) && installments >= 1 && installments <= MAX_INSTALLMENTS)) throw bad('installments', `Parcelas: informe de 1 a ${MAX_INSTALLMENTS}.`);
+    if (repeats && !(Number.isInteger(+interval) && interval >= 1 && interval <= MAX_INTERVAL)) throw bad('interval', `Informe um número inteiro de 1 a ${MAX_INTERVAL}.`);
+    if (repeats && endDate && !isValidISO(endDate)) throw bad('end', 'Data inválida. Use uma data entre 1900 e 2200.');
+    if (repeats && endDate && endDate < date) throw bad('end', 'A data final não pode ser antes da primeira data.');
     const d = description.trim() || (kind === 'transfer' ? 'Transferência' : '');
     if (!d) throw bad('description', 'Informe a descrição.');
     return {
@@ -63,6 +72,7 @@
       transfer_account_id: kind === 'transfer' ? toAccountId : null,
       category_id: kind !== 'transfer' && categoryId ? categoryId : null,
       // mudou tipo ou categoria do ajuste: deixa de ser ajuste (volta a entrar nos totais)
+      notes: notes.trim(),
       is_adjustment: !!tx?.is_adjustment && kind === tx.kind && (categoryId || null) === tx.category_id,
     };
   }
@@ -83,7 +93,7 @@
     run(async () => {
       if (editing) return saveTx(tx.id, paidFields(f));
       if (kind !== 'transfer' && repeat !== 'none') {
-        return createRecurrence({ ...f, frequency: repeat, interval_n: 1, start_date: date });
+        return createRecurrence({ ...f, frequency: repeat, interval_n: Number(interval), start_date: date, end_date: endDate || null });
       }
       if (kind === 'expense' && installments > 1) return createInstallments(f, Number(installments));
       return saveTx(null, paidFields(f));
@@ -111,10 +121,18 @@
     <Select label="Categoria" bind:value={categoryId} options={catOpts} />
     {#if !editing}
       <Select label="Repetir" bind:value={repeat} options={REPEATS} />
+      {#if repeat !== 'none'}
+        <TextInput label="A cada quantos {UNITS[repeat]}" type="number" min="1" max={MAX_INTERVAL} inputmode="numeric" bind:value={interval} help="1 = {REPEATS.find((r) => r[0] === repeat)[1].toLowerCase()}" error={err('interval')} />
+        <DatePicker label="Termina em" bind:value={endDate} clearable placeholder="Sem data final" help="Opcional. O último lançamento é até essa data." error={err('end')} />
+      {/if}
       {#if kind === 'expense' && repeat === 'none'}
         <TextInput label="Parcelas" type="number" min="1" max={MAX_INSTALLMENTS} bind:value={installments} error={err('installments')} />
       {/if}
     {/if}
+  {/if}
+
+  {#if !repeats}
+    <TextInput label="Notas" multiline bind:value={notes} maxlength="2000" help={!editing && installments > 1 ? 'Opcional. Vai em todas as parcelas.' : 'Opcional'} />
   {/if}
 
   {#if editing || (repeat === 'none' && installments <= 1)}

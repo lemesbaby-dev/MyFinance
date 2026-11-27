@@ -4,7 +4,7 @@
 import * as db from './db.js';
 import * as sync from './sync.js';
 import { uuidv7 } from './uuid.js';
-import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment } from './finance.js';
+import { materialize, validateRule, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment } from './finance.js';
 
 export const app = $state({
   ready: false,
@@ -192,9 +192,11 @@ async function addRecurrence(rec, extra = [], id = uuidv7()) {
 
 export const createRecurrence = (f) => serial(async () => {
   checkTx(f.amount_cents, f.start_date);
-  await addRecurrence({ kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
+  const rec = { kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
     category_id: f.category_id ?? null, frequency: f.frequency, interval_n: f.interval_n ?? 1, start_date: f.start_date,
-    end_date: null, active: true, generated_until: null });
+    end_date: f.end_date || null, active: true, generated_until: null };
+  validateRule(rec); // materialize não valida quando a data final já passou: sem isto a regra ficaria local e o servidor recusaria
+  await addRecurrence(rec);
   await reload();
 });
 
