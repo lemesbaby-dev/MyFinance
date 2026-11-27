@@ -74,7 +74,7 @@ ADDR=127.0.0.1:8080 ./financas
 - `ADDR` padrão é `127.0.0.1:8080` (atrás do proxy). O `X-Forwarded-For` só é confiado quando a conexão vem de
   `TRUSTED_PROXY` (IP ou CIDR, lista separada por vírgula; padrão: loopback). Em IPv6 o limite de requisições usa o prefixo /64.
 - Variáveis: `ADDR`, `DB_PATH`, `STATIC_DIR`, `GOOGLE_CLIENT_ID`, `MAX_USERS`, `ALLOWED_ORIGINS` (CORS), `TRUSTED_PROXY`,
-  `TOMBSTONE_RETENTION_DAYS` (padrão 180; `0` desliga): por quantos dias uma exclusão fica guardada antes de ser apagada de vez.
+  `TOMBSTONE_RETENTION_DAYS` (padrão 180; `0` desliga; máximo 36500): por quantos dias uma exclusão fica guardada antes de ser apagada de vez.
   Aparelho que ficar offline mais que isso refaz a cópia local ao voltar, sem perder o que tinha por enviar (`docs/02-arquitetura-offline.md`).
 - O servidor responde com `Content-Security-Policy` (e `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) em todas as
   respostas, faz shutdown gracioso em SIGINT/SIGTERM e registra um log de acesso (método, caminho, status, duração).

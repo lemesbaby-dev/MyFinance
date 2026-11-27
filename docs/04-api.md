@@ -27,7 +27,7 @@ produção (escopos básicos `openid email profile` não exigem verificação do
 - Cota por usuário: ≤ 50 mil linhas e ≤ 20 MB de dados; push acima disso é rejeitado.
 - Rate limit: por IP em `/auth/google` (10/min); por usuário em `/sync` (push 120/min, pull 300/min, reset 5/min). IPv6 por prefixo /64; `X-Forwarded-For` só de `TRUSTED_PROXY`.
 - Limite de 20 000 operações por usuário por dia; `sync_ops` guarda só os últimos 2000 `op_id`s.
-- `TOMBSTONE_RETENTION_DAYS` (padrão 180; `0` desliga): exclusões mais antigas que isso são apagadas de vez (na subida e 1x por dia).
+- `TOMBSTONE_RETENTION_DAYS` (padrão 180; `0` desliga; máximo 36500): exclusões mais antigas que isso são apagadas de vez (na subida e 1x por dia).
 
 Verificação do ID token no Go: assinatura RS256 contra as chaves públicas do Google (JWKS, com cache),
 `iss` = accounts.google.com, `aud` = nosso Client ID, `exp`, `email_verified`. Dá para fazer com

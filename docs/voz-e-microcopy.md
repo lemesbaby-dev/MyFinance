@@ -23,7 +23,8 @@ Dizem **o que aconteceu e o que fazer**, sem culpar. Erro de campo é local e es
 - Campo: "Informe uma descrição" · "Informe o nome" · "Informe o nome da conta." · "Valor deve ser maior que zero" · "Saldo inválido ou fora do limite. Exemplo: 1.250,00".
 - Tela/lista: título "Não deu certo", texto "Confira a conexão e tente de novo.", botão "Tentar de novo".
 - Salvar: "Não foi possível salvar" + a causa quando houver.
-- Servidor recusou: "Estas alterações não foram aceitas e não entram nos saldos. Descarte para voltar ao que o servidor tem, ou edite o item e salve de novo." · "foi excluído em outro aparelho".
+- Servidor recusou: "Estas alterações não foram aceitas e não entram nos saldos. Descarte para voltar ao que o servidor tem, ou edite o item e salve de novo." · "foi excluído em outro aparelho" · "não foi enviado; salve de novo para manter".
+- App desatualizado (409 do servidor): "Atualize o app: feche e abra de novo.".
 
 ## Estados vazios
 Título curto + uma frase de orientação + ação, quando existir. Nunca só "Nenhum dado".

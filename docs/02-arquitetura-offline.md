@@ -93,17 +93,26 @@ perdeu alguma exclusão, então **não** pode ser atendido de forma incremental:
 - Na troca, um upsert da fila para documento que o servidor não tem e que **não é criação** sai da fila e entra nos recusados
   ("foi excluído em outro aparelho"), igual ao `gone`. Para saber o que é criação, cada operação da fila leva a marca local
   `create` (não havia cópia local ao gravar, ou o envio anterior foi recusado); ela não vai no push. Operação enfileirada por
-  versão anterior do app não tem a marca: na dúvida não é enviada **nem** apagada (fica como recusado, a cópia local é mantida
-  fora dos saldos, e salvar de novo a recria).
+  versão anterior do app não tem a marca: na dúvida não é enviada **nem** apagada (fica como recusado com a mensagem
+  "não foi enviado; salve de novo para manter", a cópia local é mantida fora dos saldos, e salvar de novo a recria).
+  Regra de recorrência recusada não é regravada sozinha pelo `extendRecurrences` enquanto estiver na lista.
+- O marco é conferido junto da leitura/escrita: no pull ele é lido **depois** da consulta (um GC no meio vira um 409 a mais,
+  nunca um 200 sem a exclusão) e no push é comparado **dentro** da transação do lote.
+- O app lê o cursor uma vez por envio: uma recusa zera o cursor gravado (o pull seguinte relê tudo), mas os lotes seguintes
+  do mesmo envio continuam mandando o cursor com que começaram, para não serem recusados como cópia antiga.
 - Lançamento novo na fila que aponta para conta/recorrência excluída e coletada segue o caminho normal: `rejected`.
 - **App antigo** (sem `full=1` e sem `cursor`): só passa a receber 409 depois que o usuário dele tiver um marco (`gc_rev > 0`).
-  O sync falha com a mensagem do servidor, o cursor não avança e a fila fica intacta até a página recarregar com a versão nova.
+  O sync falha com a mensagem do servidor ("Atualize o app: feche e abra de novo."), o cursor não avança e a fila fica intacta até a página recarregar com a versão nova.
   Por isso o sinal é um erro, e não um campo novo num 200, que o app antigo ignoraria seguindo com dados já excluídos.
 
 ⚠️ **Limitações conhecidas do GC**: (1) o tombstone de um documento cuja exclusão chegou enquanto havia edição local na fila é
 pulado pelo pull; se esse aparelho ficar offline até o tombstone ser coletado **e** nenhuma exclusão mais nova for coletada
 depois do cursor dele, a edição recria o documento. (2) O índice único de ocorrências ignora tombstones (antes e depois do GC):
-quem impede uma ocorrência excluída de voltar é o `generated_until` da recorrência.
+quem impede uma ocorrência excluída de voltar é o `generated_until` da recorrência. (3) Criação com confirmação perdida:
+o aparelho cria um documento, o servidor aplica, a resposta se perde e o aparelho some por mais que a retenção; nesse meio-tempo
+o documento é excluído em outro aparelho, o tombstone é coletado e o `sync_ops` (90 dias) já esqueceu o `op_id`. Na volta a
+operação continua marcada como `create` (a marca é local e não sabe que o servidor chegou a aplicar), fica na fila e recria o
+documento.
 
 **Referências a categorias** (`category_id`, `parent_id`) para categoria inexistente ou excluída **não** são recusadas:
 o servidor grava `null` ("cura"). `account_id`, `transfer_account_id` e `recurrence_id` inválidos continuam `rejected`.

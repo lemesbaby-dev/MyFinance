@@ -82,6 +82,7 @@ Isso funciona porque o compose usa `image: financas:local` junto de `build:` e o
 4. Faça o rollback de código e suba: `docker compose up -d --no-build financas`.
 
 Dados feitos após o backup são perdidos; clientes offline reenviam o que tinham pendente ao reconectar.
+Exceção: a release do GC de tombstones (seção 8) não tem volta limpa nem com backup.
 
 ## 6. Problemas comuns
 
@@ -98,3 +99,40 @@ Dados feitos após o backup são perdidos; clientes offline reenviam o que tinha
 - Nada de `docker system prune`/`down -v`: a VM é compartilhada e `-v` apaga o volume de dados.
 - Mexa só em recursos com prefixo `financas-`.
 - Nunca imprimir nem commitar o `.env`, tokens, chaves ou credenciais do bucket.
+- `TOMBSTONE_RETENTION_DAYS` (padrão 180; `0` desliga; máximo 36500): valor inválido ou acima do máximo e o servidor não sobe.
+
+## 8. Release do GC de tombstones (issue #25): só para frente
+
+Esta release traz a migração v3 (`users.gc_rev`) e muda o protocolo de sync: o app novo manda `cursor` no corpo do push e
+grava a marca `create` nos itens da fila.
+
+**Não há rollback limpo.** Voltar o código já exige restaurar backup (migração, seção 5), e mesmo assim os aparelhos que já
+receberam o app novo perdem a fila: o servidor antigo recusa campo desconhecido (400), o app divide o lote até 1 operação e
+cada alteração pendente sai da fila como **recusada**. As criações e edições continuam na cópia local do aparelho (a pessoa
+precisa salvar de novo, uma a uma); as exclusões pendentes são desfeitas pelo pull seguinte. Recarregar com o app antigo não
+resolve: os itens já gravados na fila levam a marca `create` e têm o mesmo destino. Se der problema, **corrija para frente**
+(novo deploy), não volte.
+
+Ordem recomendada:
+
+1. **Antes**: backup manual (seção 4) e, na VM, veja a exclusão mais antiga guardada:
+
+   ```bash
+   ssh <HOST_SSH> 'docker exec financas-app sqlite3 /data/financas.db "SELECT MIN(deleted_at) FROM entities WHERE deleted_at IS NOT NULL"'
+   ```
+
+   Vazio, ou data com menos de ~150 dias: o primeiro GC não remove nada, ninguém ganha marco na subida e o app novo tem
+   tempo de chegar a todos os aparelhos antes de qualquer 409. Suba normalmente (seção 2).
+2. **Se houver exclusão com mais de ~150 dias**: suba com `TOMBSTONE_RETENTION_DAYS=0` no `.env`. A migração roda e o
+   servidor já aceita `cursor`, mas a limpeza fica desligada e ninguém recebe 409. Ligue 2 a 4 semanas depois (remova a
+   linha ou ponha `180`, e recrie o serviço `financas`), quando os aparelhos já tiverem o app novo.
+3. **Ao ligar**, confira o log da limpeza (ela roda na subida e 1x por dia; sem linha no log = nada a remover):
+
+   ```bash
+   ssh <HOST_SSH> 'docker logs financas-app 2>&1 | grep "gc de tombstones"'   # "gc de tombstones: N removidos"
+   ```
+
+   Quem é afetado na hora: só usuários com exclusão mais velha que a retenção e, entre eles, só aparelhos ainda com o app
+   antigo. Neles a sincronização para (envio e recebimento) com "Atualize o app: feche e abra de novo."; a fila fica intacta
+   e fechar e abrir o app com rede já traz a versão nova, que refaz a cópia local sozinha.
+4. **Rollback**: não há (ver acima).
