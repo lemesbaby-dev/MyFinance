@@ -27,7 +27,7 @@ Cada marco termina com algo que roda e foi validado. Ordem pensada para provar o
 - **Deploy/backup**: restauração real, não só "o cron rodou".
 
 ## Pendências conhecidas (fora do escopo da revisão independente)
-- **GC de tombstones**: exclusões ficam como linhas `deleted_at` para sempre (limitadas pelo teto total de 4x a cota de linhas por usuário). Falta uma limpeza de tombstones antigos (cuidado com aparelhos que ficam muito tempo offline: precisam do tombstone para apagar a cópia local).
+- ~~**GC de tombstones**~~: feito (issue #25). Tombstones com mais de `TOMBSTONE_RETENTION_DAYS` (padrão 180) são apagados pelo próprio servidor; aparelho com cursor anterior à limpeza refaz a cópia local mantendo a fila (ver "Limpeza de tombstones" em `docs/02`, que lista as limitações que sobraram).
 - **Detecção de conflito por `base_rev`**: hoje é "última escrita vence por documento" (ver `docs/02`); editar o mesmo item em dois aparelhos offline perde a edição que chegar primeiro.
 - Cópia externa do backup depende de configurar o destino no `scripts/backup.sh` (rclone/scp); restauração real na VM ainda por fazer.
 
