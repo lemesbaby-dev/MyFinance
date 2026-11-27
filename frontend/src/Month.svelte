@@ -34,8 +34,9 @@
   let month = $state(monthOf(todayISO()));
   let filter = $state(FILTERS.some(([k]) => k === saved) ? saved : 'all');
   let form = $state(null); // { tx } | {}
-  let find = $state({ q: '', accountId: '', categoryId: '' }); // busca e filtros: valem só nesta sessão
+  let find = $state({ q: '', accountId: '', categoryId: '' }); // busca e filtros: valem enquanto a aba Mês está aberta
   let finding = $state(false);
+  let bar = $state();
   let scopeFor = $state(null);
   let error = $state('');
 
@@ -68,8 +69,9 @@
   const accOpts = $derived([['', 'Todas as contas'], ...app.accounts.filter((a) => !a.archived).map((a) => [a.id, a.name])]);
   const catOpts = $derived([['', 'Todas as categorias'], ...app.categories.filter((c) => !c.parent_id && !c.is_system).sort(byName)
     .flatMap((c) => [[c.id, c.name], ...app.categories.filter((k) => k.parent_id === c.id).sort(byName).map((k) => [k.id, `${c.name} › ${k.name}`])])]);
-  const found = $derived([find.q.trim() && `“${find.q.trim()}”`, accName(find.accountId), catName(find.categoryId)].filter(Boolean).join(' · '));
-  const clearFind = () => { find = { q: '', accountId: '', categoryId: '' }; finding = false; };
+  const found = $derived([find.q.trim() && `“${find.q.trim()}”`, find.accountId && (accName(find.accountId) || 'conta excluída'), find.categoryId && (catName(find.categoryId) || 'categoria excluída')].filter(Boolean).join(' · '));
+  // O botão que limpou some junto com o filtro: o foco volta para quem abre a busca.
+  const clearFind = () => { find = { q: '', accountId: '', categoryId: '' }; finding = false; bar?.querySelector('.ui-iconbtn')?.focus(); };
 
   function setFilter(k) {
     try { localStorage.setItem('financas.filter', k); } catch { /* sem armazenamento: só não lembra */ }
@@ -122,13 +124,13 @@
 
 <MonthNav {label} onprev={() => (month = shiftMonth(month, -1))} onnext={() => (month = shiftMonth(month, 1))} />
 
-<div class="bar">
+<div class="bar" bind:this={bar}>
   <Segmented label="Mostrar" options={FILTERS} bind:value={filter} onchange={setFilter} />
-  <IconButton icon="sliders" label="Buscar e filtrar" tone={found ? 'brand' : 'soft'} onclick={() => (finding = true)} />
+  <IconButton icon="sliders" label={found ? 'Buscar e filtrar (filtro ativo)' : 'Buscar e filtrar'} aria-haspopup="dialog" tone={found ? 'brand' : 'soft'} onclick={() => (finding = true)} />
 </div>
 {#if found}
   <div class="found">
-    <p role="status">Filtrando por <b>{found}</b></p>
+    <p>Filtrando por <b>{found}</b></p>
     <Button variant="secondary" size="sm" onclick={clearFind}><Icon name="x" />Limpar</Button>
   </div>
 {/if}
@@ -179,7 +181,7 @@
 {#if hasAccounts}<div class="fab"><Button onclick={() => (form = {})}><Icon name="plus" />Lançar</Button></div>{/if}
 {#if finding}
   <Sheet title="Buscar e filtrar" onclose={() => (finding = false)}>
-    <TextInput label="Buscar" placeholder="Descrição ou observação" bind:value={find.q} autocomplete="off" />
+    <TextInput label="Buscar" placeholder="Descrição ou notas" bind:value={find.q} autocomplete="off" />
     <Select label="Conta" bind:value={find.accountId} options={accOpts} />
     <Select label="Categoria" bind:value={find.categoryId} options={catOpts} />
     <div class="acts">

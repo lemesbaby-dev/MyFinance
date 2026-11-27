@@ -273,7 +273,7 @@ export function filterTxs(txs, { q = '', accountId = '', categoryId = '' } = {},
   if (!needle && !accountId && !categoryId) return txs;
   const cats = new Set([categoryId, ...categories.filter((c) => c.parent_id === categoryId).map((c) => c.id)]);
   return txs.filter((t) =>
-    (!needle || fold(t.description).includes(needle) || fold(t.notes).includes(needle)) &&
     (!accountId || t.account_id === accountId || t.transfer_account_id === accountId) &&
-    (!categoryId || cats.has(t.category_id)));
+    (!categoryId || cats.has(t.category_id)) &&
+    (!needle || fold(t.description).includes(needle) || fold(t.notes).includes(needle)));
 }
