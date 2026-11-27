@@ -10,7 +10,7 @@ html, body { margin: 0; background: var(--surface-page); }
 body {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: var(--bw-2) solid var(--focus-ring); outline-offset: var(--bw-2); }
 h2 { margin: 0; font: var(--fw-display) var(--fs-3)/var(--lh-tight) var(--font-display); color: var(--text-strong); }
