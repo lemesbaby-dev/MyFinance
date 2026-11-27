@@ -266,7 +266,7 @@ svg.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-wid
 .hdr h2 { font: var(--fw-display) var(--fs-5)/var(--lh-tight) var(--font-display); color: var(--text-strong); letter-spacing: var(--ls-tight); }
 .iconbtn { width: var(--tap); height: var(--tap); border: 0; background: transparent; border-radius: var(--radius-pill); display: grid; place-items: center; color: var(--text-strong); flex: none; }
 .iconbtn:hover { background: var(--surface-sunken); }
-.screen { flex: 1; overflow-y: auto; padding: var(--space-2) var(--space-4) var(--space-8); display: flex; flex-direction: column; gap: var(--space-4); }
+.screen { flex: 1; overflow-y: auto; padding: var(--space-2) var(--space-4) calc(var(--tap) + var(--space-10)); display: flex; flex-direction: column; gap: var(--space-4); }
 .tabbar { display: flex; background: var(--tabbar-bg); border-top: var(--bw-1) solid var(--border-subtle); padding: var(--space-1) var(--space-2); min-height: var(--tabbar-h); }
 .tabbar button { flex: 1; min-height: var(--tap); border: 0; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); font: var(--fw-bold) var(--fs-1)/var(--lh-tight) var(--font-text); color: var(--text-muted); }
 .tabbar .pill { display: grid; place-items: center; width: var(--space-12); height: var(--space-8); border-radius: var(--radius-2); }
@@ -274,9 +274,13 @@ svg.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-wid
 .tabbar .on .pill { background: var(--tabbar-active-bg); }
 
 /* ---------- Componentes (espelham frontend/src/ui) ---------- */
-.subtabs { display: flex; gap: var(--space-5); border-bottom: var(--bw-1) solid var(--border-subtle); }
-.subtabs button { border: 0; background: transparent; min-height: var(--tap); padding: 0 var(--space-1); font: var(--fw-heavy) var(--fs-3) var(--font-text); color: var(--text-muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
-.subtabs button[aria-selected="true"] { color: var(--brand-strong); border-bottom-color: var(--brand); }
+.subtabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: var(--bw-1) solid var(--border-subtle); }
+.subtabs button { border: 0; background: transparent; min-height: var(--tap); font: var(--fw-bold) var(--fs-3) var(--font-text); color: var(--text-muted); border-bottom: var(--bw-2) solid transparent; }
+.subtabs button[aria-pressed="true"] { color: var(--brand-strong); border-bottom-color: var(--brand-strong); }
+.fab { position: absolute; right: var(--space-4); bottom: calc(var(--tabbar-h) + var(--space-5)); z-index: var(--z-sticky); box-shadow: var(--shadow-lift); }
+.nextv { border: var(--bw-1) dashed var(--color-forecast); border-radius: var(--radius-2); padding: var(--space-3); display: grid; gap: var(--space-3); justify-items: start; }
+.nextv > .field, .nextv > .btn { width: 100%; }
+.hist { background: var(--color-pending-soft); color: var(--text-body); border-radius: var(--radius-2); padding: var(--space-3); font-size: var(--fs-2); font-weight: var(--fw-bold); }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--space-1); padding: var(--space-1); background: var(--surface-sunken); border-radius: var(--radius-2); }
 .seg button { min-height: var(--tap); border: var(--bw-1) solid transparent; border-radius: var(--radius-1); background: transparent; font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-muted); }
 .seg button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-strong); border-color: var(--border-subtle); }
@@ -341,27 +345,14 @@ details.ended > summary svg { transition: transform var(--dur-fast) var(--ease-o
 .dialog { width: 100%; max-height: 92%; overflow-y: auto; background: var(--surface-page); border-radius: var(--radius-3); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); box-shadow: var(--shadow-lift); }
 .sheet h3, .dialog h3 { font: var(--fw-display) var(--fs-4)/var(--lh-tight) var(--font-display); color: var(--text-strong); }
 .sheethead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.sum { background: var(--surface-raised); border: var(--bw-1) solid var(--border-subtle); border-radius: var(--radius-3); padding: var(--space-4); display: grid; gap: var(--space-3); }
-.sum .top { display: flex; gap: var(--space-3); align-items: center; }
-.sum .top b { font: var(--money-md-weight) var(--money-md-size)/var(--money-md-lh) var(--money-md-font); font-variant-numeric: var(--num-features); display: block; }
-.sum .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
-.next { list-style: none; margin: 0; padding: 0; font-size: var(--fs-2); }
-.next li { display: flex; justify-content: space-between; padding: var(--space-1) 0; }
-.next li + li { border-top: var(--bw-1) dashed var(--border-subtle); }
 .field { display: grid; gap: var(--space-1); }
 .field label, .field .lbl { font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
 .field input, .field select { height: var(--field-h); background: var(--field-bg); border: var(--bw-1) solid var(--border-subtle); border-radius: var(--field-radius); padding: 0 var(--space-3); width: 100%; }
-.field .ro { min-height: var(--field-h); display: flex; align-items: center; padding: 0 var(--space-3); border: var(--bw-1) dashed var(--border-strong); border-radius: var(--field-radius); color: var(--text-body); font-weight: var(--fw-bold); }
 .field .help { font-size: var(--fs-1); color: var(--text-muted); font-weight: var(--fw-bold); }
 .field .err { font-size: var(--fs-1); color: var(--color-overdue); font-weight: var(--fw-heavy); }
 .note { font-size: var(--fs-2); color: var(--text-muted); }
 .stack { display: grid; gap: var(--space-2); }
-.conseq { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
-.conseq li { display: grid; grid-template-columns: var(--space-8) 1fr; gap: var(--space-3); align-items: start; font-size: var(--fs-2); }
-.conseq .i { width: var(--space-8); height: var(--space-8); border-radius: var(--radius-1); display: grid; place-items: center; }
-.conseq b { color: var(--text-strong); display: block; }
-.toast { position: absolute; left: var(--space-4); right: var(--space-4); bottom: calc(var(--tabbar-h) + var(--space-4)); z-index: var(--z-toast); background: var(--toast-bg); color: var(--toast-fg); border-radius: var(--radius-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--tap); font-weight: var(--fw-bold); box-shadow: var(--shadow-lift); }
-.toast button { border: 0; background: transparent; color: inherit; font-weight: var(--fw-heavy); text-decoration: underline; min-height: var(--tap); padding: 0 var(--space-3); }
+.toast { position: absolute; left: var(--space-4); right: var(--space-4); top: var(--space-4); z-index: var(--z-toast); background: var(--toast-bg); color: var(--toast-fg); border-radius: var(--radius-2); padding: var(--space-2) var(--space-4); display: flex; align-items: center; min-height: var(--tap); font-weight: var(--fw-bold); box-shadow: var(--shadow-lift); }
 #selftest-out { font: 12px/1.4 monospace; white-space: pre-wrap; padding: var(--space-4); }
 @media (max-width: 800px) {
   .stage { padding: var(--space-3) 0 0; gap: var(--space-4); }
@@ -378,7 +369,8 @@ details.ended > summary svg { transition: transform var(--dur-fast) var(--ease-o
 <div id="selftest-out"></div>
 
 <script>
-/* Protótipo descartável: dados falsos, regras calculadas na hora. Nada aqui vira código de produção. */
+/* Registro de design: dados falsos, regras calculadas na hora. Espelha a tela implementada (frontend/src/Recurrences.svelte,
+   RecurrenceSheet.svelte, subaba em Month.svelte). Onde divergir, a implementação vence. Nada aqui vira código de produção. */
 const TODAY = '2026-11-27';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -387,8 +379,8 @@ const ICONS = {
   home: 'M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z', wallet: 'M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2zM16 14h.01',
   tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01', sliders: 'M4 6h16M4 12h16M4 18h16M15 4v4M8 10v4M13 16v4',
   repeat: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3', clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
-  chev: 'M9 6l6 6-6 6', back: 'M15 6l-6 6 6 6', plus: 'M12 5v14M5 12h14', check: 'M5 12l5 5 9-10', flag: 'M5 21V4h11l-2 4 2 4H5',
-  more: 'M5 12h.01M12 12h.01M19 12h.01', x: 'M6 6l12 12M18 6L6 18', stop: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 9h6v6H9z', trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+  chev: 'M9 6l6 6-6 6', back: 'M15 6l-6 6 6 6', plus: 'M12 5v14M5 12h14', check: 'M5 12l5 5 9-10', down: 'M12 5v14M6 13l6 6 6-6',
+  more: 'M5 12h.01M12 12h.01M19 12h.01', x: 'M6 6l12 12M18 6L6 18', alert: 'M12 4l9 16H3zM12 10v4M12 17h.01',
 };
 const ic = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
 
@@ -398,13 +390,17 @@ const iso = (d) => d.toISOString().slice(0, 10);
 const addDays = (s, n) => { const d = D(s); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
 const addMonths = (s, n) => { const d = D(s), day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate())); return iso(d); };
 const HORIZON = addMonths(TODAY, 12); // o app gera 12 meses à frente
-const fmtDate = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}` + (y === TODAY.slice(0, 4) ? '' : `/${y}`); };
+const shortDate = (s) => s.slice(8, 10) + '/' + s.slice(5, 7);
+const fullDate = (s) => s.split('-').reverse().join('/');
 const fmtMoney = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const signed = (c, kind) => (kind === 'income' ? '+' : '−') + fmtMoney(c);
-const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const WEEKDAYS = ['aos domingos', 'às segundas', 'às terças', 'às quartas', 'às quintas', 'às sextas', 'aos sábados'];
+const FREQS = [['monthly', 'Todo mês'], ['weekly', 'Toda semana'], ['yearly', 'Todo ano'], ['daily', 'Todo dia']];
+const UNITS = { daily: 'dias', weekly: 'semanas', monthly: 'meses', yearly: 'anos' };
 
 /* ---------- dados de exemplo ---------- */
-const ACCOUNTS = { itau: 'Itaú', nubank: 'Nubank', carteira: 'Carteira' };
+const ACCOUNTS = { itau: ['Itaú'], nubank: ['Nubank'], carteira: ['Carteira'], antigo: ['Banco antigo', true] }; // [nome, arquivada]
+const accName = (id) => ACCOUNTS[id][0] + (ACCOUNTS[id][1] ? ' (arquivada)' : '');
 const CATS = { moradia: ['Moradia', 1], casa: ['Casa', 5], saude: ['Saúde', 3], transporte: ['Transporte', 6], lazer: ['Lazer', 8], estudo: ['Estudo', 2], trabalho: ['Trabalho', 9], '': ['Sem categoria', 0] };
 const seed = () => [
   { id: 'r1', kind: 'expense', description: 'Aluguel', amount_cents: 180000, account_id: 'itau', category_id: 'moradia', frequency: 'monthly', interval_n: 1, start_date: '2026-03-05', end_date: null, active: true, late: [] },
@@ -417,6 +413,7 @@ const seed = () => [
   { id: 'r8', kind: 'income', description: 'Aluguel da vaga de garagem', amount_cents: 25000, account_id: 'nubank', category_id: '', frequency: 'monthly', interval_n: 1, start_date: '2026-07-01', end_date: null, active: true, late: [] },
   { id: 'r9', kind: 'expense', description: 'Streaming de filmes', amount_cents: 3990, account_id: 'nubank', category_id: 'lazer', frequency: 'monthly', interval_n: 1, start_date: '2025-08-12', end_date: '2026-09-12', active: true, late: [] },
   { id: 'r10', kind: 'expense', description: 'Curso de inglês', amount_cents: 28000, account_id: 'nubank', category_id: 'estudo', frequency: 'monthly', interval_n: 1, start_date: '2026-05-03', end_date: '2026-10-03', active: false, late: [] },
+  { id: 'r11', kind: 'expense', description: 'Plano de celular', amount_cents: 5990, account_id: 'antigo', category_id: 'casa', frequency: 'monthly', interval_n: 1, start_date: '2026-02-18', end_date: null, active: true, late: [] },
 ];
 
 /* ---------- regra -> lançamentos ---------- */
@@ -426,17 +423,17 @@ function occurrences(r, until = HORIZON, ignoreEnd = false) {
   for (let i = 0; ; i++) { const d = stepDate(r, i); if (d > until || (!ignoreEnd && r.end_date && d > r.end_date)) break; out.push(d); }
   return out;
 }
+// pending: de hoje em diante; late: pendentes com data < hoje (atrasados)
 function stats(r) {
   const all = occurrences(r);
   return { paid: all.filter((d) => d < TODAY && !r.late.includes(d)), late: all.filter((d) => d < TODAY && r.late.includes(d)), pending: all.filter((d) => d >= TODAY) };
 }
-const stateOf = (r) => !r.active || (r.end_date && r.end_date < TODAY) ? 'ended' : r.end_date ? 'ending' : 'active';
+// encerrada: desativada, com data final no passado, ou com data final e nada mais por vir (igual a recurrenceView)
+const stateOf = (r) => !r.active || (r.end_date && (r.end_date < TODAY || !stats(r).pending.length)) ? 'ended' : r.end_date ? 'ending' : 'active';
 function rhythm(r) {
   const n = r.interval_n, d = D(r.start_date);
-  if (r.frequency === 'daily') return n === 1 ? 'Todo dia' : `A cada ${n} dias`;
-  if (r.frequency === 'weekly') return (n === 1 ? 'Toda semana' : `A cada ${n} semanas`) + `, ${WEEKDAYS[d.getUTCDay()]}`;
-  if (r.frequency === 'monthly') return (n === 1 ? 'Todo mês' : `A cada ${n} meses`) + `, dia ${d.getUTCDate()}`;
-  return (n === 1 ? 'Todo ano' : `A cada ${n} anos`) + `, em ${r.start_date.slice(8)}/${r.start_date.slice(5, 7)}`;
+  const [one, when] = { daily: ['Todo dia', ''], weekly: ['Toda semana', WEEKDAYS[d.getUTCDay()]], monthly: ['Todo mês', `dia ${d.getUTCDate()}`], yearly: ['Todo ano', `em ${shortDate(r.start_date)}`] }[r.frequency];
+  return (n === 1 ? one : `A cada ${n} ${UNITS[r.frequency]}`) + (when && `, ${when}`);
 }
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -447,11 +444,12 @@ const SELFTEST = hash.has('selftest');
 const data = { full: seed(), empty: [] };
 const S = {
   place: hash.get('place') || 'A', tab: hash.get('tab') || 'month', sub: hash.get('sub') || 'rep', data: hash.get('data') || 'full',
-  theme: hash.get('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  theme: hash.get('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'), next: hash.get('v') === 'next',
   sheet: hash.get('sheet'), confirm: hash.has('confirm'), menu: null, toast: null, error: {}, seq: 0,
 };
 const rules = () => data[S.data];
 const rule = (id) => rules().find((r) => r.id === id);
+const NEXTV = '<span class="badge forecast">Próxima versão</span>';
 
 /* ---------- painel de fora ---------- */
 const PLACES = {
@@ -459,65 +457,74 @@ const PLACES = {
   B: ['Mais › Repetições', 'Uma linha na aba Mais abre a tela, com “voltar”.', ['Não mexe nas telas do dia a dia.'], ['Fica escondido: Mais é ajuste (tema, sincronização, conta). 2 toques, e ninguém procura o aluguel em “Mais”.']],
   C: ['Contas › Repetições', 'Subaba no topo da aba Contas: “Contas | Repetições”.', ['A aba Contas é curta: a subaba não disputa espaço.'], ['Confunde “Contas” (banco, carteira) com “contas a pagar”. A repetição é de lançamento, não de conta bancária.']],
 };
+const seg = (act, label, cur, opts) => `<div class="seg" role="group" aria-label="${label}">${opts.map(([v, t]) => `<button data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${t}</button>`).join('')}</div>`;
 function panelHTML() {
   const [, , pros, cons] = PLACES[S.place];
   return `
-  <div><h1>Repetições</h1><p class="small">Protótipo da issue #23 · direção B · hoje no protótipo: ${fmtDate(TODAY)}/${TODAY.slice(0, 4)}</p></div>
-  <div><h2>Onde a tela mora</h2><div class="opts">
-    ${Object.entries(PLACES).map(([k, [t, d]]) => `<button class="opt" data-act="place" data-v="${k}" aria-pressed="${S.place === k}"><b>${k} · ${t}${k === 'A' ? ' <i class="badge brand" style="font-style:normal">Recomendada</i>' : ''}</b><span>${d}</span></button>`).join('')}
+  <div><h1>Repetições</h1><p class="small">Registro de design da issue #23 · decidido em 27/11/2026 e implementado na aba Mês · hoje no protótipo: ${fullDate(TODAY)}</p></div>
+  <div><h2>Onde a tela mora · decidido: A</h2><div class="opts">
+    ${Object.entries(PLACES).map(([k, [t, d]]) => `<button class="opt" data-act="place" data-v="${k}" aria-pressed="${S.place === k}"><b>${k} · ${t} <i class="badge ${k === 'A' ? 'brand' : ''}" style="font-style:normal">${k === 'A' ? 'Escolhida' : 'Não escolhida'}</i></b><span>${d}</span></button>`).join('')}
   </div></div>
+  ${S.place === 'A' ? '' : '<p class="hist" id="hist">Histórico: alternativa não escolhida. A tela foi implementada na alternativa A.</p>'}
   <div class="proscons">${pros.map((p) => `<p class="pro">${p}</p>`).join('')}${cons.map((p) => `<p class="con">${p}</p>`).join('')}</div>
-  <div><h2>Dados de exemplo</h2><div class="seg" role="group" aria-label="Dados de exemplo">
-    <button data-act="data" data-v="full" aria-pressed="${S.data === 'full'}">Com repetições</button><button data-act="data" data-v="empty" aria-pressed="${S.data === 'empty'}">Vazio</button></div></div>
-  <div><h2>Tema</h2><div class="seg" role="group" aria-label="Tema">
-    <button data-act="theme" data-v="light" aria-pressed="${S.theme === 'light'}">Claro</button><button data-act="theme" data-v="dark" aria-pressed="${S.theme === 'dark'}">Escuro</button></div></div>
+  <div><h2>Versão</h2>${seg('ver', 'Versão', S.next ? 'next' : 'now', [['now', 'Atual'], ['next', 'Próxima versão']])}
+    <p class="small" style="margin-top:var(--space-2)">“Próxima versão” mostra o que já foi decidido e ainda não foi implementado: mudar o ritmo e o dia na própria tela, e “Repetir de novo” numa encerrada.</p></div>
+  <div><h2>Dados de exemplo</h2>${seg('data', 'Dados de exemplo', S.data, [['full', 'Com repetições'], ['empty', 'Vazio']])}</div>
+  <div><h2>Tema</h2>${seg('theme', 'Tema', S.theme, [['light', 'Claro'], ['dark', 'Escuro']])}</div>
   <div><h2>O que dá para testar</h2><ul>
-    <li>Tocar numa repetição: detalhe e edição.</li><li>“Encerrar repetição”: o aviso do que acontece.</li>
-    <li>Estados: ativa (Aluguel), com atraso (Condomínio), com data final (Academia), encerrada (no fim da lista).</li>
-    <li>“Nova repetição” e o estado vazio.</li><li>Na alternativa A: menu ⋯ de um lançamento › “Ver repetição”.</li></ul></div>`;
+    <li>Tocar numa repetição: detalhe e edição, com “Mudar a partir de” (padrão: a próxima pendente). Uma data mais à frente divide a repetição em duas.</li>
+    <li>“Encerrar repetição”: saem os pendentes de hoje em diante; atrasados e efetivados ficam. Encerre o Condomínio: ele continua na lista principal por causa do atrasado.</li>
+    <li>Estados: ativa (Aluguel), com atraso (Condomínio), com data final (Academia), em conta arquivada (Plano de celular, fora do resumo), encerrada (no fim da lista).</li>
+    <li>“Nova repetição” (única ação, também no estado vazio) abre o formulário de lançamento já repetindo.</li>
+    <li>Menu ⋯ de um lançamento › “Ver repetição”.</li></ul></div>`;
 }
 
 /* ---------- telas ---------- */
 const TABS = [['month', 'Mês', 'home'], ['accounts', 'Contas', 'wallet'], ['categories', 'Categorias', 'tag'], ['more', 'Mais', 'sliders']];
-const dot = (catId, glyph) => { const [name, n] = CATS[catId] ?? CATS['']; return `<span class="dot" ${n ? `style="background:var(--cat-${n});color:var(--cat-${n}-ink)"` : ''} aria-hidden="true">${glyph ?? esc(name[0])}</span>`; };
+const dot = (catId, kind) => { const [, n] = CATS[catId] ?? CATS['']; return `<span class="dot" ${n ? `style="background:var(--cat-${n});color:var(--cat-${n}-ink)"` : ''} aria-hidden="true">${ic(kind === 'income' ? 'down' : 'tag')}</span>`; };
 
 function ruleRow(r) {
   const st = stateOf(r), s = stats(r), tags = [];
-  if (s.late.length) tags.push(`<span class="badge overdue">${ic('clock')}Atrasado · ${fmtDate(s.late[0])}</span>`);
-  if (st === 'ended') tags.push(`<span class="badge">${ic('stop')}Encerrada · parou em ${fmtDate(r.end_date ?? TODAY)}</span>`);
+  if (s.late.length) tags.push(`<span class="badge overdue">${ic('alert')}${s.late.length === 1 ? 'Atrasado' : `${s.late.length} atrasados`} · ${shortDate(s.late[0])}</span>`);
+  if (st === 'ended') tags.push(`<span class="badge">Encerrada${r.end_date < TODAY ? ` · parou em ${fullDate(r.end_date)}` : ''}</span>`);
   else {
-    if (s.pending.length) tags.push(`<span class="badge forecast">${ic('repeat')}Próximo · ${fmtDate(s.pending[0])}</span>`);
-    if (st === 'ending') tags.push(`<span class="badge brand">${ic('flag')}Até ${fmtDate(r.end_date)} · ${s.pending.length === 1 ? 'falta 1' : `faltam ${s.pending.length}`}</span>`);
+    if (s.pending.length) tags.push(`<span class="badge forecast">${ic('clock')}Próximo · ${shortDate(s.pending[0])}</span>`);
+    if (r.end_date) tags.push(`<span class="badge brand">Até ${fullDate(r.end_date)}</span>`);
   }
-  return `<button class="row ${st === 'ended' ? 'off' : ''} ${s.late.length ? 'late' : ''}" data-act="open" data-v="${r.id}" data-state="${st}" aria-label="${esc(r.description)}, ${signed(r.amount_cents, r.kind)}, ${rhythm(r)}">
-    ${dot(r.category_id)}
-    <span class="main"><span class="t">${esc(r.description)}</span><span class="m" style="display:block">${rhythm(r)} · ${ACCOUNTS[r.account_id]}</span></span>
+  return `<button class="row ${st === 'ended' ? 'off' : ''} ${s.late.length ? 'late' : ''}" data-act="open" data-v="${r.id}" data-state="${st}">
+    ${dot(r.category_id, r.kind)}
+    <span class="main"><span class="t">${esc(r.description)}</span><span class="m" style="display:block">${rhythm(r)} · ${accName(r.account_id)}</span></span>
     <span class="money ${r.kind}">${signed(r.amount_cents, r.kind)}</span>
-    <span class="act"><span class="tags">${tags.join('')}</span>${ic('chev')}</span>
+    <span class="tags" style="grid-column:1 / 4">${tags.join('')}</span>
   </button>`;
 }
 function repList() {
-  const all = rules(), live = all.filter((r) => stateOf(r) !== 'ended'), ended = all.filter((r) => stateOf(r) === 'ended');
+  const all = rules();
+  // Estado vazio sem botão próprio: a única ação é o “Nova repetição” fixo da tela.
   if (!all.length) return `<div class="empty" id="empty"><div class="art">${ic('repeat')}</div><h3>Nenhuma repetição ainda</h3>
-    <p>Aluguel, salário, academia: lance uma vez e o MyFinance repete para você.</p><button class="btn" data-act="new">${ic('plus')}Nova repetição</button></div>`;
-  const next = (r) => { const s = stats(r); return s.late[0] ?? s.pending[0] ?? '9999'; }; // atrasado primeiro, depois o que vence antes
-  const in30 = (r) => stats(r).pending.filter((d) => d <= addDays(TODAY, 30)).length * r.amount_cents;
-  const sum = (k) => live.filter((r) => r.kind === k).reduce((a, r) => a + in30(r), 0);
+    <p>Aluguel, salário, academia: lance uma vez e o MyFinance repete para você.</p></div>`;
+  const first = (r) => { const s = stats(r); return s.late[0] ?? s.pending[0] ?? '9'; }; // atrasado primeiro, depois o que vence antes
+  const sorted = [...all].sort((a, b) => first(a).localeCompare(first(b)) || a.description.localeCompare(b.description, 'pt-BR'));
+  // Encerrada com atrasado fica na lista principal: ainda há o que efetivar ou excluir.
+  const gone = (r) => stateOf(r) === 'ended' && !stats(r).late.length, ended = sorted.filter(gone);
+  // Resumo: pendentes de hoje a hoje + 29, sem as contas arquivadas (como na aba Mês).
+  const until = addDays(TODAY, 30);
+  const sum = (k) => all.filter((r) => r.kind === k && !ACCOUNTS[r.account_id][1]).reduce((a, r) => a + stats(r).pending.filter((d) => d < until).length * r.amount_cents, 0);
   const inc = sum('income'), exp = sum('expense');
-  const group = (k, title) => { const g = live.filter((r) => r.kind === k).sort((a, b) => next(a).localeCompare(next(b))); return g.length ? `<section><div class="grouphead"><b>${title}</b><span>${g.length}</span></div><div class="list" role="list">${g.map(ruleRow).join('')}</div></section>` : ''; };
+  const group = (k, title) => { const g = sorted.filter((r) => r.kind === k && !gone(r)); return g.length ? `<section><div class="grouphead"><b>${title}</b><span>${g.length}</span></div><div class="list" role="list">${g.map(ruleRow).join('')}</div></section>` : ''; };
   return `
-  <div class="sech"><span>Contas que se repetem</span><button class="btn sm secondary" data-act="new">${ic('plus')}Nova</button></div>
-  <div class="card"><p class="cap">Próximos 30 dias</p><div class="tot">
+  <div class="card" id="summary"><p class="cap">Próximos 30 dias</p><div class="tot">
     <div class="stat"><span>A receber</span><b class="income">${signed(inc, 'income')}</b></div>
     <div class="stat"><span>A pagar</span><b class="expense">${signed(exp, 'expense')}</b></div>
-    <div class="stat"><span>Sobra</span><b>${inc - exp < 0 ? '−' : '+'}${fmtMoney(Math.abs(inc - exp))}</b></div></div></div>
+    <div class="stat"><span>Resultado</span><b>${inc - exp < 0 ? '−' : ''}${fmtMoney(Math.abs(inc - exp))}</b></div></div></div>
+  <div class="sech">Contas que se repetem</div>
   ${group('expense', 'A pagar')}${group('income', 'A receber')}
-  ${ended.length ? `<details class="ended"><summary>Encerradas (${ended.length})${ic('chev')}</summary><div class="list" role="list">${ended.map(ruleRow).join('')}</div><p class="note" style="padding:var(--space-2) var(--space-1)">Não geram mais lançamentos. O que já foi efetivado continua no histórico.</p></details>` : ''}`;
+  ${ended.length ? `<details class="ended"><summary>Encerradas (${ended.length})${ic('chev')}</summary><div class="grouphead"><b>Não geram mais lançamentos</b></div><div class="list" role="list">${ended.map(ruleRow).join('')}</div></details>` : ''}`;
 }
 
 function txRow(id, title, meta, cents, kind, cat, badge, ruleId) {
   const has = ruleId && rule(ruleId);
-  return `<div class="row ${badge[0] === 'overdue' ? 'late' : ''}">${dot(cat)}
+  return `<div class="row ${badge[0] === 'overdue' ? 'late' : ''}">${dot(cat, kind)}
     <span class="main"><span class="t">${title}</span><span class="m" style="display:block">${meta}${has ? ' · repete' : ''}</span></span>
     <span class="money ${kind}">${signed(cents, kind)}</span>
     <span class="act"><span class="tags"><span class="badge ${badge[0]}">${ic(badge[1])}${badge[2]}</span></span>
@@ -525,12 +532,13 @@ function txRow(id, title, meta, cents, kind, cat, badge, ruleId) {
     ${S.menu === id ? `<div class="menu" role="menu"><button role="menuitem" data-act="nop">Editar</button>${has ? `<button role="menuitem" data-act="see" data-v="${ruleId}">${ic('repeat')}Ver repetição</button>` : ''}<button role="menuitem" data-act="nop">Excluir</button></div>` : ''}
   </div>`;
 }
+// O pendente de hoje (Faxina) some se a repetição for encerrada; o atrasado (Condomínio) fica.
 const monthMock = () => `
   <div class="hero"><div><span>Hoje</span><b>R$ 3.412,80</b></div><div class="fc" style="text-align:right"><span>Previsto até 30/11</span><b>R$ 2.812,80</b></div></div>
   <div class="monthnav"><button class="iconbtn" data-act="nop" aria-label="Mês anterior">${ic('back')}</button>Novembro de 2026<button class="iconbtn" data-act="nop" aria-label="Próximo mês">${ic('chev')}</button></div>
   <div class="seg" role="group" aria-label="Mostrar"><button aria-pressed="true">Todos</button><button aria-pressed="false" data-act="nop">Pendentes</button><button aria-pressed="false" data-act="nop">Efetivados</button></div>
-  <section><div class="grouphead"><b>Atrasados</b><span>1</span></div><div class="list">${txRow('t1', 'Condomínio', 'Itaú', 42000, 'expense', 'moradia', ['overdue', 'clock', 'Atrasado'], 'r2')}</div></section>
-  <section><div class="grouphead"><b>Hoje</b></div><div class="list">${txRow('t2', 'Faxina', 'Carteira', 18000, 'expense', 'casa', ['', 'clock', 'Pendente'], 'r4')}${txRow('t3', 'Mercado', 'Nubank', 23745, 'expense', 'casa', ['settled', 'check', 'Efetivado'])}</div></section>
+  <section><div class="grouphead"><b>Atrasados</b><span>1</span></div><div class="list">${txRow('t1', 'Condomínio', 'Itaú', 42000, 'expense', 'moradia', ['overdue', 'alert', 'Atrasado'], 'r2')}</div></section>
+  <section><div class="grouphead"><b>Hoje</b></div><div class="list">${rule('r4') && stateOf(rule('r4')) === 'ended' ? '' : txRow('t2', 'Faxina', 'Carteira', 18000, 'expense', 'casa', ['', 'clock', 'Pendente'], 'r4')}${txRow('t3', 'Mercado', 'Nubank', 23745, 'expense', 'casa', ['settled', 'check', 'Efetivado'])}</div></section>
   <section><div class="grouphead"><b>15/11</b></div><div class="list">${txRow('t4', 'Internet', 'Nubank', 9990, 'expense', 'casa', ['settled', 'check', 'Efetivado'], 'r5')}</div></section>`;
 const accountsMock = () => `<div class="card"><p class="cap">Saldo total</p><b class="money" style="font-size:var(--fs-5)">R$ 3.412,80</b></div>
   <div class="list">${[['Itaú', 'Conta corrente', 'R$ 2.150,30'], ['Nubank', 'Conta corrente', 'R$ 1.082,50'], ['Carteira', 'Dinheiro', 'R$ 180,00']].map(([n, t, v]) => `<div class="row"><span class="dot">${n[0]}</span><span class="main"><span class="t">${n}</span><span class="m" style="display:block">${t}</span></span><span class="money">${v}</span></div>`).join('')}</div>`;
@@ -547,60 +555,66 @@ function moreMock() {
 }
 
 /* ---------- detalhe / edição ---------- */
-const opt = (map, cur, label = (v) => v) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${label(v)}</option>`).join('');
+const opt = (entries, cur) => entries.map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
+const accOpts = (cur) => Object.entries(ACCOUNTS).filter(([k, v]) => !v[1] || k === cur).map(([k]) => [k, ACCOUNTS[k][0]]);
+const catOpts = () => Object.entries(CATS).map(([k, v]) => [k, v[0]]);
 const toInput = (c) => (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-function sheetHTML() {
-  const isNew = S.sheet === 'new', r = isNew ? { kind: 'expense', description: '', amount_cents: 0, account_id: 'nubank', category_id: '', frequency: 'monthly', interval_n: 1, start_date: TODAY, end_date: null, active: true, late: [] } : rule(S.sheet);
-  if (!r) return '';
-  const st = stateOf(r), s = stats(r), ended = st === 'ended', e = S.error;
-  const head = `<div class="sheethead"><h3 id="sheet-title">${isNew ? 'Nova repetição' : ended ? 'Repetição encerrada' : 'Repetição'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Fechar">${ic('x')}</button></div>`;
-  const summary = isNew ? '' : `<div class="sum">
-    <div class="top">${dot(r.category_id)}<div><b class="${r.kind}">${signed(r.amount_cents, r.kind)}</b><span class="small">${esc(r.description)} · ${rhythm(r)}</span></div></div>
-    <div class="tags" style="display:flex;flex-wrap:wrap;gap:var(--space-1)">
-      ${st === 'active' ? `<span class="badge settled">${ic('repeat')}Ativa · sem data para acabar</span>` : st === 'ending' ? `<span class="badge brand">${ic('flag')}Termina em ${fmtDate(r.end_date)}</span>` : `<span class="badge">${ic('stop')}Encerrada · parou em ${fmtDate(r.end_date ?? TODAY)}</span>`}
-      ${s.late.length ? `<span class="badge overdue">${ic('clock')}${plural(s.late.length, 'atrasado', 'atrasados')}</span>` : ''}</div>
-    <div class="facts"><div class="stat"><span>Desde</span><b>${fmtDate(r.start_date)}</b></div><div class="stat"><span>Já efetivados</span><b id="n-paid">${s.paid.length}</b></div><div class="stat"><span>Pendentes</span><b id="n-pending">${s.pending.length + s.late.length}</b></div></div>
-    ${ended ? '' : `<div><p class="cap" style="margin:0">Próximos lançamentos</p><ul class="next">${s.pending.slice(0, 3).map((d) => `<li><span>${fmtDate(d)}</span><span class="money ${r.kind}" style="font-size:var(--fs-2)">${signed(r.amount_cents, r.kind)}</span></li>`).join('')}</ul>
-      <p class="note">${r.end_date ? `O último é em ${fmtDate(s.pending.at(-1) ?? r.end_date)}.` : 'Os lançamentos aparecem na aba Mês até 12 meses à frente, e vão sendo criados conforme o tempo passa.'}</p></div>`}
-  </div>`;
-  if (ended) return `<div class="scrim" data-act="close-bg"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">${head}${summary}
-    <p class="note">Esta repetição não gera mais lançamentos. ${plural(s.paid.length, 'lançamento efetivado continua', 'lançamentos efetivados continuam')} no histórico e nos saldos.${s.late.length ? ` ${plural(s.late.length, 'atrasado continua', 'atrasados continuam')} na aba Mês.` : ''}</p>
-    <div class="stack"><button class="btn secondary block" data-act="again">${ic('repeat')}Repetir de novo</button><button class="btn ghost block" data-act="close">Fechar</button></div></div></div>`;
-  return `<div class="scrim" data-act="close-bg"><form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate>${head}${summary}
-    ${isNew ? `<div class="seg" role="group" aria-label="Tipo"><button type="button" data-act="kind" data-v="expense" aria-pressed="true">Despesa</button><button type="button" data-act="kind" data-v="income" aria-pressed="false">Receita</button></div><input type="hidden" name="kind" value="expense">` : ''}
+const shared = (r, e) => `
     <div class="field"><label for="f-amount">Valor (R$)</label><input id="f-amount" name="amount" inputmode="decimal" value="${r.amount_cents ? toInput(r.amount_cents) : ''}" placeholder="0,00" ${e.amount ? 'aria-invalid="true"' : ''}>${e.amount ? `<span class="err">${e.amount}</span>` : ''}</div>
-    <div class="field"><label for="f-desc">Descrição</label><input id="f-desc" name="description" maxlength="200" value="${esc(r.description)}" placeholder="Ex.: Aluguel" ${e.description ? 'aria-invalid="true"' : ''}>${e.description ? `<span class="err">${e.description}</span>` : '<span class="help">Como aparece na lista</span>'}</div>
-    <div class="field"><label for="f-acc">Conta</label><select id="f-acc" name="account_id">${opt(ACCOUNTS, r.account_id)}</select></div>
-    <div class="field"><label for="f-cat">Categoria</label><select id="f-cat" name="category_id">${opt(CATS, r.category_id ?? '', (v) => v[0])}</select></div>
-    ${isNew ? `<div class="field"><label for="f-freq">Repete</label><select id="f-freq" name="frequency">${opt({ daily: 'Todo dia', weekly: 'Toda semana', monthly: 'Todo mês', yearly: 'Todo ano' }, 'monthly')}</select></div>
-      <div class="field"><label for="f-start">Primeiro lançamento</label><input id="f-start" name="start_date" type="date" value="${TODAY}"></div>`
-    : `<div class="field"><span class="lbl">Repete</span><div class="ro">${rhythm(r)}</div><span class="help">Para mudar o ritmo ou o dia, encerre esta e crie outra.</span></div>`}
-    <div class="field"><label for="f-end">Termina em (opcional)</label><input id="f-end" name="end_date" type="date" min="${TODAY}" value="${r.end_date ?? ''}" ${e.end ? 'aria-invalid="true"' : ''}>
-      ${e.end ? `<span class="err">${e.end}</span>` : ''}<span class="help" id="end-hint">Deixe vazio para repetir sem data para acabar.</span></div>
-    ${isNew ? '' : `<p class="note">As mudanças valem para os lançamentos <b>pendentes</b>. Os já efetivados não mudam.</p>`}
-    <div class="stack"><button class="btn block" type="submit">${isNew ? 'Criar repetição' : 'Salvar'}</button>
-      ${isNew ? '' : `<button class="btn danger block" type="button" data-act="end">${ic('stop')}Encerrar repetição</button>`}</div>
-  </form></div>`;
+    <div class="field"><label for="f-desc">Descrição</label><input id="f-desc" name="description" maxlength="200" value="${esc(r.description)}" placeholder="Ex.: Aluguel" ${e.description ? 'aria-invalid="true"' : ''}>${e.description ? `<span class="err">${e.description}</span>` : ''}</div>`;
+const rhythmFields = (r) => `
+    <div class="field"><label for="f-freq">${r.id ? 'Repete' : 'Repetir'}</label><select id="f-freq" name="frequency">${opt(FREQS, r.frequency)}</select></div>
+    <div class="field"><label for="f-int" id="l-int">A cada quantos ${UNITS[r.frequency]}</label><input id="f-int" name="interval_n" type="number" min="1" max="99" inputmode="numeric" value="${r.interval_n}"><span class="help">1 = sem pular nenhum</span></div>`;
+function factsOf(r) {
+  const s = stats(r);
+  return [`${rhythm(r)} · desde ${fullDate(r.start_date)}`,
+    r.end_date && (r.end_date < TODAY ? `parou em ${fullDate(r.end_date)}` : stateOf(r) !== 'ended' && `até ${fullDate(r.end_date)}`),
+    plural(s.paid.length, 'efetivado', 'efetivados'), plural(s.pending.length, 'pendente', 'pendentes'),
+    s.late.length && plural(s.late.length, 'atrasado', 'atrasados')].filter(Boolean).join(' · ');
 }
-function endHint() {
-  const r = rule(S.sheet), el = $('#end-hint'), v = $('#f-end')?.value;
-  if (!r || !el) return;
-  const gone = v ? stats(r).pending.filter((d) => d > v).length : 0;
-  el.textContent = !v ? 'Deixe vazio para repetir sem data para acabar.' : gone ? `Com essa data, ${plural(gone, 'lançamento pendente', 'lançamentos pendentes')} depois de ${fmtDate(v)} ${gone === 1 ? 'sai' : 'saem'} dos próximos meses.` : `O último lançamento será até ${fmtDate(v)}.`;
+const head = (title) => `<div class="sheethead"><h3 id="sheet-title">${title}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Fechar">${ic('x')}</button></div>`;
+function sheetHTML() {
+  const e = S.error;
+  // “Nova repetição” abre o formulário de lançamento do app, já repetindo.
+  if (S.sheet === 'new') return `<div class="scrim" data-act="close-bg"><form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate>${head('Novo lançamento')}
+    <div class="seg" role="group" aria-label="Tipo"><button type="button" data-act="kind" data-v="expense" aria-pressed="true">Despesa</button><button type="button" data-act="kind" data-v="income" aria-pressed="false">Receita</button></div><input type="hidden" name="kind" value="expense">
+    ${shared({ amount_cents: 0, description: '' }, e)}
+    <div class="field"><label for="f-start">Vencimento</label><input id="f-start" name="start_date" type="date" value="${TODAY}"></div>
+    <div class="field"><label for="f-acc">Conta</label><select id="f-acc" name="account_id">${opt(accOpts(), 'nubank')}</select></div>
+    <div class="field"><label for="f-cat">Categoria</label><select id="f-cat" name="category_id">${opt(catOpts(), '')}</select></div>
+    ${rhythmFields({ frequency: 'monthly', interval_n: 1 })}
+    <div class="field"><label for="f-end">Termina em</label><input id="f-end" name="end_date" type="date" min="${TODAY}"><span class="help">Opcional. O último lançamento é até essa data.</span></div>
+    <button class="btn block" type="submit">Salvar</button></form></div>`;
+  const r = rule(S.sheet);
+  if (!r) return '';
+  const s = stats(r), mine = [...s.late, ...s.pending];
+  if (stateOf(r) === 'ended') return `<div class="scrim" data-act="close-bg"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">${head(esc(r.description))}
+    <p class="note" id="facts">${factsOf(r)}</p>
+    <p class="note">Repetição encerrada: não gera mais lançamentos. O que já foi efetivado continua no histórico e nos saldos${s.late.length ? ', e o que está atrasado continua na aba Mês' : ''}.</p>
+    ${S.next ? `<div class="nextv">${NEXTV}<button class="btn block" data-act="again">${ic('repeat')}Repetir de novo</button><p class="note">Cria outra repetição igual, a partir da próxima data do mesmo ritmo. O histórico desta fica como está.</p></div>` : ''}
+    <button class="btn secondary block" data-act="close">Fechar</button></div></div>`;
+  return `<div class="scrim" data-act="close-bg"><form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate>${head('Repetição')}
+    <p class="note" id="facts">${factsOf(r)}</p>
+    ${shared(r, e)}
+    <div class="field"><label for="f-acc">Conta</label><select id="f-acc" name="account_id">${opt(accOpts(r.account_id), r.account_id)}</select></div>
+    <div class="field"><label for="f-cat">Categoria</label><select id="f-cat" name="category_id">${opt(catOpts(), r.category_id ?? '')}</select></div>
+    ${S.next ? `<div class="nextv">${NEXTV}${rhythmFields(r)}
+      <div class="field"><label for="f-day">Novo dia</label><input id="f-day" name="day" type="date" min="${TODAY}"><span class="help">Data do primeiro lançamento no novo dia. Deixe vazio para manter o dia.</span></div></div>` : ''}
+    ${mine.length ? `<div class="field"><label for="f-from">Mudar a partir de</label><input id="f-from" name="from" type="date" min="${mine[0]}" max="${mine.at(-1)}" value="${s.pending[0] ?? mine[0]}"><span class="help">Mudam os lançamentos pendentes dessa data em diante. Os anteriores e os já efetivados não mudam.</span></div>`
+    : '<p class="note">Não há lançamentos pendentes agora: a mudança vale para os próximos que forem criados.</p>'}
+    <p class="note">Para mudar ${S.next ? 'a data final' : 'o ritmo, o dia ou a data final'}, encerre esta repetição e crie outra.</p>
+    <div class="stack"><button class="btn block" type="submit">Salvar</button><button class="btn danger block" type="button" data-act="end">Encerrar repetição</button></div>
+  </form></div>`;
 }
 function confirmHTML() {
   const r = rule(S.sheet); if (!r) return '';
   const s = stats(r);
-  const li = (tone, icon, title, text) => `<li><span class="i" style="background:var(--color-${tone}-soft);color:var(--color-${tone})">${ic(icon)}</span><span><b>${title}</b>${text}</span></li>`;
+  const message = ['Ela para de se repetir a partir de hoje.',
+    s.pending.length ? `${plural(s.pending.length, 'lançamento pendente sai', 'lançamentos pendentes saem')} da aba Mês.` : '',
+    s.paid.length ? `${plural(s.paid.length, 'já efetivado continua', 'já efetivados continuam')} no histórico e nos saldos.` : '',
+    s.late.length ? `${plural(s.late.length, 'atrasado fica', 'atrasados ficam')} na aba Mês para você efetivar ou excluir.` : ''].filter(Boolean).join(' ');
   return `<div class="scrim center"><div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" id="confirm">
-    <h3 id="dlg-title">Encerrar “${esc(r.description)}”?</h3>
-    <p class="note">Ela para de se repetir a partir de hoje (${fmtDate(TODAY)}).</p>
-    <ul class="conseq">
-      ${li('forecast', 'trash', s.pending.length ? `${plural(s.pending.length, 'lançamento pendente sai', 'lançamentos pendentes saem')}` : 'Nenhum lançamento pendente para tirar', s.pending.length ? `De ${fmtDate(s.pending[0])} em diante, somem da aba Mês. O previsto dos próximos meses é refeito sem ${s.pending.length === 1 ? 'ele' : 'eles'}.` : 'Ela só deixa de criar novos.')}
-      ${li('settled', 'check', `${plural(s.paid.length, 'já efetivado continua', 'já efetivados continuam')}`, 'Nada muda no que já aconteceu: histórico e saldos ficam iguais.')}
-      ${s.late.length ? li('overdue', 'clock', `${plural(s.late.length, 'atrasado continua na lista', 'atrasados continuam na lista')}`, `O de ${fmtDate(s.late[0])} fica na aba Mês para você efetivar ou excluir.`) : ''}
-    </ul>
-    <p class="note">Quer que pare só mais para frente? Cancele e preencha “Termina em”.</p>
+    <h3 id="dlg-title">Encerrar "${esc(r.description)}"?</h3><p class="note">${message}</p>
     <div class="stack"><button class="btn block" data-act="end-yes" style="background:var(--color-expense);color:var(--surface-page)">Encerrar</button><button class="btn ghost block" data-act="end-no">Cancelar</button></div>
   </div></div>`;
 }
@@ -608,40 +622,49 @@ function confirmHTML() {
 /* ---------- render ---------- */
 function render() {
   document.documentElement.dataset.theme = S.theme;
-  const home = S.tab === HOME[S.place], pushed = S.place === 'B' && home && S.sub === 'rep';
+  const home = S.tab === HOME[S.place], pushed = S.place === 'B' && home && S.sub === 'rep', onRep = pushed || (home && S.place !== 'B' && S.sub === 'rep');
   const subs = S.place === 'A' ? [['main', 'Lançamentos'], ['rep', 'Repetições']] : [['main', 'Contas'], ['rep', 'Repetições']];
   const mock = { month: monthMock, accounts: accountsMock, categories: categoriesMock, more: moreMock }[S.tab];
-  const body = home && S.place !== 'B' ? `<div class="subtabs" role="tablist" aria-label="Seções de ${TABS.find(([k]) => k === S.tab)[1]}">${subs.map(([k, t]) => `<button role="tab" data-act="sub" data-v="${k}" aria-selected="${S.sub === k}">${t}</button>`).join('')}</div>${S.sub === 'rep' ? repList() : mock()}` : pushed ? repList() : mock();
+  const body = home && S.place !== 'B' ? `<div class="subtabs" role="group" aria-label="Seções de ${TABS.find(([k]) => k === S.tab)[1]}">${subs.map(([k, t]) => `<button data-act="sub" data-v="${k}" aria-pressed="${S.sub === k}">${t}</button>`).join('')}</div>${S.sub === 'rep' ? repList() : mock()}` : pushed ? repList() : mock();
   $('#panel').innerHTML = panelHTML();
   $('#phone').innerHTML = `
     <header class="hdr">${pushed ? `<button class="iconbtn" data-act="sub" data-v="main" aria-label="Voltar para Mais">${ic('back')}</button>` : ''}<h2 id="title">${pushed ? 'Repetições' : TABS.find(([k]) => k === S.tab)[1]}</h2></header>
     <main class="screen" id="screen">${body}</main>
+    ${onRep ? `<button class="btn fab" id="fab" data-act="new">${ic('plus')}Nova repetição</button>` : S.tab === 'month' ? `<button class="btn fab" id="fab" data-act="nop">${ic('plus')}Lançar</button>` : ''}
     <nav class="tabbar" aria-label="Seções">${TABS.map(([k, t, i]) => `<button data-act="tab" data-v="${k}" class="${S.tab === k ? 'on' : ''}" ${S.tab === k ? 'aria-current="page"' : ''}><span class="pill">${ic(i)}</span>${t}</button>`).join('')}</nav>
     ${S.sheet ? sheetHTML() : ''}${S.sheet && S.confirm ? confirmHTML() : ''}
-    ${S.toast ? `<div class="toast" role="status"><span>${S.toast.msg}</span>${S.toast.undo ? '<button data-act="undo">Desfazer</button>' : ''}</div>` : ''}`;
-  endHint();
-  if (!SELFTEST) history.replaceState(null, '', '#' + new URLSearchParams({ place: S.place, tab: S.tab, sub: S.sub, data: S.data, theme: S.theme }));
+    ${S.toast ? `<div class="toast" role="status">${S.toast}</div>` : ''}`;
+  if (!SELFTEST) history.replaceState(null, '', '#' + new URLSearchParams({ place: S.place, tab: S.tab, sub: S.sub, data: S.data, theme: S.theme, v: S.next ? 'next' : 'now' }));
 }
 let toastTimer;
-function toast(msg, undo) { S.toast = { msg, undo }; clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = null; render(); }, 6000); }
+function toast(msg) { S.toast = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = null; render(); }, 4000); }
 const parseMoney = (v) => Math.round(Number(String(v).trim().replace(/\./g, '').replace(',', '.')) * 100);
 
+// Como editRule: mudam a regra e os pendentes com data >= `from`. Se sobram pendentes antes de `from`, a repetição se divide
+// em duas (a antiga termina na véspera). `rh` (próxima versão): ritmo/dia novos; com efetivados para trás, também divide.
+function editRule(r, from, patch, rh) {
+  const s = stats(r), mine = [...s.late, ...s.pending], tx = mine.find((d) => d >= from) ?? mine.at(-1);
+  const turn = rh && (rh.frequency !== r.frequency || rh.interval_n !== r.interval_n || (rh.day && rh.day !== tx)) ? { frequency: rh.frequency, interval_n: rh.interval_n, start_date: rh.day || tx || r.start_date } : null;
+  if (!tx || (tx === mine[0] && !(turn && s.paid.length))) return Object.assign(r, patch, turn);
+  rules().push({ ...r, ...patch, id: 'n' + ++S.seq, start_date: tx, late: r.late.filter((d) => d >= tx), ...turn });
+  r.end_date = addDays(tx, -1);
+}
 function save() {
-  const f = Object.fromEntries(new FormData($('#form'))), cents = parseMoney(f.amount), isNew = S.sheet === 'new';
+  const f = Object.fromEntries(new FormData($('#form'))), cents = parseMoney(f.amount), n = Math.max(1, Number(f.interval_n) || 1);
   S.error = {};
-  if (!(cents > 0)) S.error.amount = 'Valor deve ser maior que zero';
-  if (!f.description.trim()) S.error.description = 'Informe uma descrição';
-  if (f.end_date && f.end_date < TODAY) S.error.end = 'Escolha uma data de hoje em diante, ou use “Encerrar repetição”.';
+  if (!(cents > 0)) S.error.amount = 'Informe um valor maior que zero.';
+  else if (!f.description.trim()) S.error.description = 'Informe a descrição.';
   if (Object.keys(S.error).length) return render();
-  const patch = { description: f.description.trim(), amount_cents: cents, account_id: f.account_id, category_id: f.category_id, end_date: f.end_date || null };
-  if (isNew) rules().push({ id: 'n' + ++S.seq, kind: f.kind, frequency: f.frequency, interval_n: 1, start_date: f.start_date || TODAY, active: true, late: [], ...patch });
-  else Object.assign(rule(S.sheet), patch);
-  S.sheet = null; toast(isNew ? 'Repetição criada' : 'Repetição salva'); render();
+  const patch = { description: f.description.trim(), amount_cents: cents, account_id: f.account_id, category_id: f.category_id };
+  if (S.sheet === 'new') rules().push({ id: 'n' + ++S.seq, kind: f.kind, frequency: f.frequency, interval_n: n, start_date: f.start_date || TODAY, end_date: f.end_date || null, active: true, late: [], ...patch });
+  else editRule(rule(S.sheet), f.from || TODAY, patch, f.frequency && { frequency: f.frequency, interval_n: n, day: f.day });
+  S.sheet = null; render();
 }
 const ACT = {
   place: (v) => { Object.assign(S, { place: v, tab: HOME[v], sub: v === 'B' ? 'main' : 'rep', sheet: null, confirm: false, menu: null }); },
   data: (v) => { Object.assign(S, { data: v, sheet: null, confirm: false }); },
   theme: (v) => { S.theme = v; },
+  ver: (v) => { Object.assign(S, { next: v === 'next', sheet: null, confirm: false }); },
   tab: (v) => { Object.assign(S, { tab: v, sub: 'main', menu: null }); },
   sub: (v) => { S.sub = v; S.menu = null; },
   open: (v) => { S.sheet = v; S.error = {}; },
@@ -651,9 +674,9 @@ const ACT = {
   close: () => { S.sheet = null; S.confirm = false; },
   end: () => { S.confirm = true; },
   'end-no': () => { S.confirm = false; },
-  'end-yes': () => { const r = rule(S.sheet), before = { end_date: r.end_date, active: r.active }; Object.assign(r, { end_date: addDays(TODAY, -1), active: false }); S.sheet = null; S.confirm = false; toast('Repetição encerrada', () => Object.assign(r, before)); },
-  undo: () => { S.toast.undo(); S.toast = null; },
-  again: () => { const r = rule(S.sheet), start = occurrences(r, HORIZON, true).find((d) => d >= TODAY) ?? TODAY; rules().push({ ...r, id: 'n' + ++S.seq, start_date: start, end_date: null, active: true, late: [] }); S.sheet = null; toast(`De volta a partir de ${fmtDate(start)}`); },
+  // Como endRecurrence: data final = ontem (nunca antes do início nem depois de uma data final que já existia) e desativa.
+  'end-yes': () => { const r = rule(S.sheet), last = addDays(TODAY, -1); Object.assign(r, { active: false, end_date: [r.start_date, r.end_date && r.end_date < last ? r.end_date : last].sort().at(-1) }); S.sheet = null; S.confirm = false; },
+  again: () => { const r = rule(S.sheet), start = occurrences(r, HORIZON, true).find((d) => d >= TODAY) ?? TODAY; rules().push({ ...r, id: 'n' + ++S.seq, start_date: start, end_date: null, active: true, late: [] }); S.sheet = null; },
   kind: (v, el) => { el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); $('#form [name=kind]').value = v; return false; },
   nop: () => { S.menu = null; toast('Fora deste protótipo'); },
 };
@@ -665,46 +688,68 @@ document.addEventListener('click', (ev) => {
   if (S.sheet) ($('#confirm .btn.ghost') ?? $('.sheet .iconbtn'))?.focus({ preventScroll: true });
 });
 document.addEventListener('submit', (ev) => { ev.preventDefault(); save(); });
-document.addEventListener('input', (ev) => { if (ev.target.id === 'f-end') endHint(); });
+document.addEventListener('change', (ev) => { if (ev.target.id === 'f-freq') $('#l-int').textContent = 'A cada quantos ' + UNITS[ev.target.value]; });
 document.addEventListener('keydown', (ev) => { if (ev.key !== 'Escape') return; if (S.confirm) S.confirm = false; else if (S.sheet) S.sheet = null; else if (S.menu) S.menu = null; else return; render(); });
 render();
 
-/* ---------- autoteste: abra index.html#selftest (clica pelo protótipo e confere) ---------- */
+/* ---------- autoteste: abra index.html#selftest (ou #selftest&theme=dark); clica pelo protótipo e confere ---------- */
 if (SELFTEST) {
   const out = [], ok = (name, cond) => out.push(`${cond ? 'ok  ' : 'FAIL'} ${name}`), click = (s) => { const el = $(s); if (!el) throw new Error('não achei ' + s); el.click(); };
   const rows = (st) => document.querySelectorAll(`#screen button.row${st ? `[data-state="${st}"]` : '[data-state]'}`).length;
+  const folded = () => document.querySelectorAll('details.ended button.row').length; // dentro de “Encerradas”
+  const text = (s) => $(s)?.textContent ?? '';
+  const endRule = (id) => { click(`[data-act=open][data-v=${id}]`); click('[data-act=end]'); click('[data-act=end-yes]'); };
+  const start = S.theme;
   try {
-    Object.assign(S, { place: 'A', tab: 'month', sub: 'main', data: 'full', theme: 'light', sheet: null, confirm: false }); data.full = seed(); render();
-    ok('A: Mês abre em Lançamentos, com subabas', !!$('.subtabs') && !!$('.hero'));
-    click('[data-act=sub][data-v=rep]'); ok('A: subaba Repetições lista 8 vivas + 2 encerradas', rows() === 10 && rows('ended') === 2 && rows('ending') === 1);
-    ok('lista: Condomínio mostra atraso', /Atrasado · 20\/11/.test($('[data-v=r2]').textContent));
-    ok('lista: Aluguel mostra próximo 05/12', /Próximo · 05\/12/.test($('[data-v=r1]').textContent));
-    ok('lista: Academia mostra data final', /Até 10\/05\/2027 · faltam 6/.test($('[data-v=r3]').textContent));
-    click('[data-act=open][data-v=r3]'); ok('detalhe da Academia abre', $('#sheet-title').textContent === 'Repetição' && $('#n-paid').textContent === '6' && $('#n-pending').textContent === '6');
-    $('#f-amount').value = '0'; click('#form [type=submit]'); ok('edição valida valor', /maior que zero/.test($('#form').textContent));
-    $('#f-amount').value = '129,90'; click('#form [type=submit]'); ok('edição salva e volta para a lista', !S.sheet && /129,90/.test($('[data-v=r3]').textContent) && /Repetição salva/.test($('.toast').textContent));
+    Object.assign(S, { place: 'A', tab: 'month', sub: 'main', data: 'full', next: false, sheet: null, confirm: false }); data.full = seed(); render();
+    ok('A: Mês abre em Lançamentos, com subabas e “Lançar”', !!$('.subtabs') && !!$('.hero') && /Lançar/.test(text('#fab')));
+    ok('painel: A escolhida; B e C não escolhidas', /Escolhida/.test(text('[data-act=place][data-v=A]')) && /Não escolhida/.test(text('[data-act=place][data-v=B]')) && /Não escolhida/.test(text('[data-act=place][data-v=C]')));
+    click('[data-act=sub][data-v=rep]'); ok('A: subaba Repetições lista 9 na principal + 2 encerradas, sem hero', rows() === 11 && folded() === 2 && !$('.hero'));
+    ok('resumo dos próximos 30 dias: A receber / A pagar / Resultado, sem a conta arquivada', /Próximos 30 dias A receber\+R\$ 6\.750,00 A pagar−R\$ 2\.979,80 ResultadoR\$ 3\.770,20/.test(text('#summary').replace(/\s+/g, ' ')) && !/Sobra/.test(text('#screen')));
+    ok('lista: conta arquivada aparece como “(arquivada)”', /Banco antigo \(arquivada\)/.test(text('[data-v=r11]')));
+    ok('lista: Condomínio mostra atraso', /Atrasado · 20\/11/.test(text('[data-v=r2]')));
+    ok('lista: Aluguel mostra próximo 05/12', /Próximo · 05\/12/.test(text('[data-v=r1]')));
+    ok('lista: Academia mostra data final', /Até 10\/05\/2027/.test(text('[data-v=r3]')));
+    click('[data-act=open][data-v=r3]');
+    ok('detalhe da Academia: fatos e “Mudar a partir de” na próxima pendente', text('#sheet-title') === 'Repetição' && /6 efetivados · 6 pendentes/.test(text('#facts')) && $('#f-from').value === '2026-12-10');
+    ok('versão atual: ritmo e dia só leitura', !$('#f-freq') && !$('.nextv') && /Para mudar o ritmo, o dia ou a data final, encerre/.test(text('#form')));
+    $('#f-amount').value = '0'; click('#form [type=submit]'); ok('edição valida valor', /maior que zero/.test(text('#form')));
+    $('#f-amount').value = '129,90'; click('#form [type=submit]'); ok('editar a partir da próxima pendente muda a própria repetição', !S.sheet && /129,90/.test(text('[data-v=r3]')) && rows() === 11);
+    click('[data-act=open][data-v=r1]'); $('#f-amount').value = '1.950,00'; $('#f-from').value = '2027-02-05'; click('#form [type=submit]');
+    ok('editar a partir de uma data à frente divide em duas', rows() === 12 && /1\.800,00/.test(text('[data-v=r1]')) && /Até 04\/02\/2027/.test(text('[data-v=r1]')) && /1\.950,00/.test(text('[data-v=n1]')) && /Próximo · 05\/02/.test(text('[data-v=n1]')));
     click('[data-act=open][data-v=r2]'); click('[data-act=end]');
-    ok('encerrar explica pendentes, efetivados e atrasado', /12 lançamentos pendentes saem/.test($('#confirm').textContent) && /7 já efetivados continuam/.test($('#confirm').textContent) && /1 atrasado continua/.test($('#confirm').textContent));
+    ok('encerrar explica pendentes, efetivados e atrasado', /12 lançamentos pendentes saem da aba Mês/.test(text('#confirm')) && /7 já efetivados continuam/.test(text('#confirm')) && /1 atrasado fica na aba Mês/.test(text('#confirm')));
     click('[data-act=end-no]'); ok('cancelar mantém a repetição aberta', S.sheet === 'r2' && !$('#confirm'));
-    click('[data-act=end]'); click('[data-act=end-yes]'); ok('encerrar move para Encerradas', rows('ended') === 3 && stats(rule('r2')).pending.length === 0 && stats(rule('r2')).late.length === 1);
-    click('[data-act=undo]'); ok('desfazer devolve', rows('ended') === 2 && stateOf(rule('r2')) === 'active');
-    click('[data-act=open][data-v=r10]'); ok('encerrada: só leitura + repetir de novo', $('#sheet-title').textContent === 'Repetição encerrada' && !$('#form') && !!$('[data-act=again]'));
-    click('[data-act=again]'); ok('repetir de novo cria outra a partir de 03/12', rules().at(-1).start_date === '2026-12-03' && rows() === 11);
-    click('[data-act=sub][data-v=main]'); click('[data-act=menu][data-v=t4]'); click('[data-act=see]'); ok('A: menu do lançamento › Ver repetição', S.sheet === 'r5');
+    click('[data-act=end]'); click('[data-act=end-yes]');
+    ok('encerrada com atrasado continua na lista principal, sem “Desfazer”', stateOf(rule('r2')) === 'ended' && folded() === 2 && !$('details.ended [data-v=r2]') && /Atrasado · 20\/11/.test(text('[data-v=r2]')) && /Encerrada · parou em 26\/11\/2026/.test(text('[data-v=r2]')) && !$('.toast') && stats(rule('r2')).pending.length === 0);
+    endRule('r4'); ok('encerrada sem atrasado vai para Encerradas', folded() === 3 && !!$('details.ended [data-v=r4]'));
+    click('[data-act=sub][data-v=main]'); ok('aba Mês: o atrasado fica, o pendente de hoje sai', /Condomínio/.test(text('#screen')) && !/Faxina/.test(text('#screen')));
+    click('[data-act=menu][data-v=t4]'); click('[data-act=see]'); ok('menu do lançamento › Ver repetição', S.sheet === 'r5');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); ok('Escape fecha', !S.sheet);
-    click('[data-act=place][data-v=B]'); ok('B: abre em Mais com a entrada', $('#title').textContent === 'Mais' && !!$('#more-entry') && !$('.subtabs'));
-    click('#more-entry'); ok('B: tela Repetições com voltar', $('#title').textContent === 'Repetições' && rows() === 11);
-    click('.hdr [data-act=sub]'); ok('B: voltar retorna a Mais', $('#title').textContent === 'Mais');
-    click('[data-act=place][data-v=C]'); ok('C: Contas com subaba Repetições', $('#title').textContent === 'Contas' && $('[role=tab][aria-selected=true]').textContent === 'Repetições' && rows() === 11);
-    click('[data-act=tab][data-v=categories]'); ok('barra inferior segue com 4 abas, sem Repetições', document.querySelectorAll('.tabbar button').length === 4 && !/Repeti/.test($('.tabbar').textContent));
-    click('[data-act=place][data-v=A]'); click('[data-act=data][data-v=empty]'); ok('vazio: estado vazio com ação', !!$('#empty') && rows() === 0);
-    click('#empty [data-act=new]'); $('#f-amount').value = '1.234,56'; $('#f-desc').value = 'Plano de saúde'; click('#form [type=submit]');
-    ok('nova repetição aparece na lista', rows() === 1 && /1\.234,56/.test($('#screen').textContent) && /Próximo · 27\/11/.test($('#screen').textContent));
-    const bg = () => getComputedStyle($('#phone')).backgroundColor, light = bg();
-    click('[data-act=theme][data-v=dark]'); ok('tema escuro troca os tokens', document.documentElement.dataset.theme === 'dark' && bg() !== light);
+    click('[data-act=sub][data-v=rep]'); click('[data-act=open][data-v=r10]');
+    ok('encerrada: só leitura, sem “Repetir de novo” na versão atual', text('#sheet-title') === 'Curso de inglês' && !$('#form') && !$('[data-act=again]') && /parou em 03\/10\/2026/.test(text('#facts')));
+    click('[data-act=ver][data-v=next]'); click('[data-act=open][data-v=r10]');
+    ok('próxima versão: “Repetir de novo” sinalizado', !!$('.nextv [data-act=again]') && /Próxima versão/.test(text('.nextv')));
+    click('[data-act=again]'); ok('repetir de novo cria outra a partir de 03/12', rules().at(-1).start_date === '2026-12-03' && rows() === 13);
+    click('[data-act=open][data-v=r5]'); ok('próxima versão: ritmo e dia editáveis, sinalizados', !!$('.nextv #f-freq') && !!$('.nextv #f-int') && !!$('.nextv #f-day'));
+    $('#f-day').value = '2026-12-20'; click('#form [type=submit]');
+    ok('mudar o dia: a antiga encerra e a nova segue no dia 20', stateOf(rule('r5')) === 'ended' && rhythm(rules().at(-1)) === 'Todo mês, dia 20' && /Próximo · 20\/12/.test(text(`[data-v=${rules().at(-1).id}]`)));
+    click('[data-act=ver][data-v=now]');
+    click('[data-act=place][data-v=B]'); ok('B (não escolhida): abre em Mais com a entrada', text('#title') === 'Mais' && !!$('#more-entry') && !$('.subtabs') && !!$('#hist'));
+    click('#more-entry'); ok('B: tela Repetições com voltar', text('#title') === 'Repetições' && rows() === 14);
+    click('.hdr [data-act=sub]'); ok('B: voltar retorna a Mais', text('#title') === 'Mais');
+    click('[data-act=place][data-v=C]'); ok('C (não escolhida): Contas com subaba Repetições', text('#title') === 'Contas' && text('.subtabs [aria-pressed=true]') === 'Repetições' && rows() === 14 && !!$('#hist'));
+    click('[data-act=tab][data-v=categories]'); ok('barra inferior segue com 4 abas, sem Repetições', document.querySelectorAll('.tabbar button').length === 4 && !/Repeti/.test(text('.tabbar')));
+    click('[data-act=place][data-v=A]'); click('[data-act=data][data-v=empty]');
+    ok('vazio: uma única ação, “Nova repetição”', !!$('#empty') && rows() === 0 && !$('#hist') && !$('#empty button') && document.querySelectorAll('#phone [data-act=new]').length === 1 && /Nova repetição/.test(text('#fab')));
+    click('#fab'); ok('nova repetição abre o formulário de lançamento já repetindo', text('#sheet-title') === 'Novo lançamento' && $('#f-freq').value === 'monthly');
+    $('#f-amount').value = '1.234,56'; $('#f-desc').value = 'Plano de saúde'; click('#form [type=submit]');
+    ok('nova repetição aparece na lista', rows() === 1 && /1\.234,56/.test(text('#screen')) && /Próximo · 27\/11/.test(text('#screen')));
+    const bg = () => getComputedStyle($('#phone')).backgroundColor, before = bg(), other = start === 'dark' ? 'light' : 'dark';
+    click(`[data-act=theme][data-v=${other}]`); ok(`tema: de ${start} para ${other} troca os tokens`, document.documentElement.dataset.theme === other && bg() !== before);
   } catch (e) { out.push('FAIL exceção: ' + e.message); }
   const fails = out.filter((l) => l.startsWith('FAIL')).length;
-  $('#selftest-out').textContent = `SELFTEST ${fails ? 'FALHOU' : 'OK'} · ${out.length - fails}/${out.length}\n` + out.join('\n');
+  $('#selftest-out').textContent = `SELFTEST ${fails ? 'FALHOU' : 'OK'} · ${out.length - fails}/${out.length} · tema inicial ${start}\n` + out.join('\n');
 }
 </script>
 </body>
