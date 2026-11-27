@@ -1,6 +1,6 @@
 <script>
   import { app, setPaid, deleteTx, deleteRecurring } from './lib/app.svelte.js';
-  import { balances, monthView, monthEnd, monthOf, shiftMonth, todayISO } from './lib/finance.js';
+  import { balances, filterTxs, monthView, monthEnd, monthOf, shiftMonth, todayISO } from './lib/finance.js';
   import { shortDate } from './lib/format.js';
   import TxForm from './TxForm.svelte';
   import Scope from './Scope.svelte';
@@ -16,6 +16,10 @@
   import Banner from './ui/Banner.svelte';
   import Button from './ui/Button.svelte';
   import Icon from './ui/Icon.svelte';
+  import IconButton from './ui/IconButton.svelte';
+  import Sheet from './ui/Sheet.svelte';
+  import TextInput from './ui/TextInput.svelte';
+  import Select from './ui/Select.svelte';
   import { confirmDialog } from './ui/confirm.js';
   import { rowState, groupByDate, catOf, catMap } from './ui/logic.js';
 
@@ -30,6 +34,9 @@
   let month = $state(monthOf(todayISO()));
   let filter = $state(FILTERS.some(([k]) => k === saved) ? saved : 'all');
   let form = $state(null); // { tx } | {}
+  let find = $state({ q: '', accountId: '', categoryId: '' }); // busca e filtros: valem enquanto a aba Mês está aberta
+  let finding = $state(false);
+  let bar = $state();
   let scopeFor = $state(null);
   let error = $state('');
 
@@ -37,7 +44,7 @@
   const bal = $derived(balances(app.accounts, app.transactions, until, app.rejectedIds));
   const nowBal = $derived(balances(app.accounts, app.transactions, today, app.rejectedIds));
   const archived = $derived(new Set(app.accounts.filter((a) => a.archived).map((a) => a.id)));
-  const view = $derived(monthView(app.transactions, month, filter, today, archived, app.rejectedIds));
+  const view = $derived(monthView(filterTxs(app.transactions, find, app.categories), month, filter, today, archived, app.rejectedIds));
   // Quanto do movimento do mês já foi efetivado (trilha do hero); independe do filtro da lista. Uma passada só.
   const flow = $derived.by(() => {
     const o = { paid: 0, pending: 0 };
@@ -57,6 +64,14 @@
 
   const accName = (id) => app.accounts.find((a) => a.id === id)?.name ?? '';
   const catName = (id) => app.categories.find((c) => c.id === id)?.name ?? '';
+
+  const byName = (a, b) => a.name.localeCompare(b.name, 'pt-BR');
+  const accOpts = $derived([['', 'Todas as contas'], ...app.accounts.filter((a) => !a.archived).map((a) => [a.id, a.name])]);
+  const catOpts = $derived([['', 'Todas as categorias'], ...app.categories.filter((c) => !c.parent_id && !c.is_system).sort(byName)
+    .flatMap((c) => [[c.id, c.name], ...app.categories.filter((k) => k.parent_id === c.id).sort(byName).map((k) => [k.id, `${c.name} › ${k.name}`])])]);
+  const found = $derived([find.q.trim() && `“${find.q.trim()}”`, find.accountId && (accName(find.accountId) || 'conta excluída'), find.categoryId && (catName(find.categoryId) || 'categoria excluída')].filter(Boolean).join(' · '));
+  // O botão que limpou some junto com o filtro: o foco volta para quem abre a busca.
+  const clearFind = () => { find = { q: '', accountId: '', categoryId: '' }; finding = false; bar?.querySelector('.ui-iconbtn')?.focus(); };
 
   function setFilter(k) {
     try { localStorage.setItem('financas.filter', k); } catch { /* sem armazenamento: só não lembra */ }
@@ -109,7 +124,16 @@
 
 <MonthNav {label} onprev={() => (month = shiftMonth(month, -1))} onnext={() => (month = shiftMonth(month, 1))} />
 
-<Segmented label="Mostrar" options={FILTERS} bind:value={filter} onchange={setFilter} />
+<div class="bar" bind:this={bar}>
+  <Segmented label="Mostrar" options={FILTERS} bind:value={filter} onchange={setFilter} />
+  <IconButton icon="sliders" label={found ? 'Buscar e filtrar (filtro ativo)' : 'Buscar e filtrar'} aria-haspopup="dialog" tone={found ? 'brand' : 'soft'} onclick={() => (finding = true)} />
+</div>
+{#if found}
+  <div class="found">
+    <p>Filtrando por <b>{found}</b></p>
+    <Button variant="secondary" size="sm" onclick={clearFind}><Icon name="x" />Limpar</Button>
+  </div>
+{/if}
 
 <Card>
   <p class="cap">{TOTAL_LABEL[filter]}</p>
@@ -131,7 +155,11 @@
 <section class="list">
   <h2>Lançamentos</h2>
   {#if view.rows.length === 0}
-    <EmptyState title={hasAccounts ? 'Nada neste filtro' : 'Nenhuma conta ainda'} text={hasAccounts ? 'Use “Lançar” para registrar.' : 'Crie uma conta na aba Contas para começar.'} />
+    {#if found}
+      <EmptyState title="Nada encontrado" text="Nenhum lançamento deste mês bate com a busca e os filtros." actionLabel="Limpar filtros" onaction={clearFind} />
+    {:else}
+      <EmptyState title={hasAccounts ? 'Nada neste filtro' : 'Nenhuma conta ainda'} text={hasAccounts ? 'Use “Lançar” para registrar.' : 'Crie uma conta na aba Contas para começar.'} />
+    {/if}
   {:else}
     {#each days as d (d.date)}
       <ListGroup title={d.date === today ? 'Hoje' : shortDate(d.date)} today={d.date === today}>
@@ -151,6 +179,17 @@
 </section>
 
 {#if hasAccounts}<div class="fab"><Button onclick={() => (form = {})}><Icon name="plus" />Lançar</Button></div>{/if}
+{#if finding}
+  <Sheet title="Buscar e filtrar" onclose={() => (finding = false)}>
+    <TextInput label="Buscar" placeholder="Descrição ou notas" bind:value={find.q} autocomplete="off" />
+    <Select label="Conta" bind:value={find.accountId} options={accOpts} />
+    <Select label="Categoria" bind:value={find.categoryId} options={catOpts} />
+    <div class="acts">
+      <Button variant="secondary" disabled={!found} onclick={clearFind}>Limpar</Button>
+      <Button onclick={() => (finding = false)}>Ver lançamentos</Button>
+    </div>
+  </Sheet>
+{/if}
 {#if form}<TxForm tx={form.tx ?? null} onclose={() => (form = null)} />{/if}
 {#if scopeFor}<Scope verb="Excluir" onpick={removeScoped} onclose={() => (scopeFor = null)} />{/if}
 
@@ -159,6 +198,12 @@
   .tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); container-type: inline-size; }
   /* Três colunas sempre: a fonte segue a largura do card (como no BalanceHero) para "+R$ 5.000,00" caber. */
   .tot :global(.ui-money) { font-size: clamp(var(--fs-2), 4.6cqw, var(--fs-4)); }
+  .bar { display: flex; align-items: center; gap: var(--space-2); }
+  .bar :global(.ui-seg) { flex: 1; min-width: 0; }
+  .found { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .found p { margin: 0; min-width: 0; font-size: var(--fs-2); color: var(--text-muted); overflow-wrap: anywhere; }
+  .found b { color: var(--text-strong); }
+  .acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
   .list { display: flex; flex-direction: column; gap: var(--space-2); }
   .fab { position: fixed; right: var(--space-4); bottom: calc(var(--tabbar-h) + var(--space-3) + env(safe-area-inset-bottom)); z-index: var(--z-sticky); box-shadow: var(--shadow-lift); border-radius: var(--radius-pill); }
 </style>
