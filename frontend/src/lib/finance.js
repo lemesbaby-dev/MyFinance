@@ -130,6 +130,16 @@ function scan(rule, from, to) {
   return { dates, capped };
 }
 
+/** Primeira data do ritmo da regra de `from` em diante, sem olhar a data final (null: não há até 2200 ou `from` inválida). */
+export function nextOccurrence(rule, from) {
+  try {
+    for (let n = startN(rule, from); ; n++) {
+      const d = nth(rule, n);
+      if (d >= from) return d;
+    }
+  } catch { return null; }
+}
+
 /** Até onde materializar as ocorrências: hoje + N meses. */
 export const horizon = (today, months = 12) => addMonths(today, months);
 

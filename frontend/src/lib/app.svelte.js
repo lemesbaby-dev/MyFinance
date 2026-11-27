@@ -4,7 +4,7 @@
 import * as db from './db.js';
 import * as sync from './sync.js';
 import { uuidv7 } from './uuid.js';
-import { materialize, validateRule, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment } from './finance.js';
+import { materialize, validateRule, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment, nextOccurrence } from './finance.js';
 
 export const app = $state({
   ready: false,
@@ -241,20 +241,110 @@ async function editOccurrence(tx, scope, changes, ruleChanges) {
   await reload();
 }
 
+const sharedChanges = (rec, changes) => Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (rec[k] ?? null)).map((k) => [k, changes[k]]));
+
+// Regra (gravada em `id`) + as ocorrências dela até o horizonte, pulando as datas em `taken` (já há lançamento ali).
+function generate(id, rec, taken) {
+  const m = materialize({ ...rec, id }, horizon(todayISO()), uuidv7);
+  return {
+    rule: put('recurrence', id, { ...rec, generated_until: m.generated_until }),
+    txs: m.txs.filter((t) => !taken.has(t.data.date)).map((t) => put('transaction', t.id, t.data)),
+  };
+}
+
+/**
+ * Mudança de ritmo/dia (`frequency`, `interval_n`, `start_date` = nova data-base; sem ela, `from`) ou de data final (`end_date`).
+ * Devolve null se nada disso muda; senão { items (uma gravação atômica), rhythm, gone, edited }.
+ *  ritmo/dia  as datas mudam, então religar as pendentes não serve: a partir do corte (`from`, ou a data-base se for antes)
+ *             as pendentes saem e uma regra nova gera as novas; a antiga termina na véspera. Antes do corte e efetivadas não mudam.
+ *             Sem nada para guardar na antiga, ela mesma muda (não sobra regra vazia).
+ *  data final só a regra: saem as pendentes depois dela, ou nascem as que faltavam.
+ * `gone`: pendentes que saem; `edited`: quantas delas têm nota ou foram mudadas à mão (a tela avisa antes de gravar).
+ */
+function schedulePlan(rec, from, c, shared = {}) {
+  const sched = { frequency: c.frequency ?? rec.frequency, interval_n: c.interval_n ?? rec.interval_n, end_date: 'end_date' in c ? c.end_date || null : rec.end_date ?? null };
+  const start = c.start_date ?? from;
+  const rhythm = sched.frequency !== rec.frequency || sched.interval_n !== rec.interval_n || (c.start_date != null && nextOccurrence(rec, start) !== start);
+  if (!rhythm && sched.end_date === (rec.end_date ?? null)) return null;
+  const today = todayISO();
+  if (!rec.active || (rec.end_date && rec.end_date < today)) throw new Error('Esta repetição está encerrada. Use "Repetir de novo".');
+  if (!isValidISO(start) || (sched.end_date && !isValidISO(sched.end_date))) throw new Error('Data inválida (use uma data entre 1900 e 2200).');
+  if (sched.end_date && sched.end_date !== rec.end_date && sched.end_date < today) throw new Error('A data final não pode ser antes de hoje. Para parar agora, use "Encerrar repetição".');
+  const cut = start < from ? start : from;
+  const mine = app.transactions.filter((t) => t.recurrence_id === rec.id);
+  const gone = mine.filter((t) => t.status === 'pending' && (rhythm ? t.date >= cut : sched.end_date && t.date > sched.end_date));
+  const keep = mine.filter((t) => !gone.includes(t));
+  const taken = new Set(keep.map((t) => t.date));
+  const edited = gone.filter((t) => t.notes || nextOccurrence(rec, t.date) !== t.date || RECURRING_FIELDS.some((k) => (t[k] ?? null) !== (rec[k] ?? null))).length;
+  let rules;
+  let g;
+  if (rhythm) {
+    const next = { ...doc(rec), ...shared, ...sched, start_date: start, generated_until: null };
+    validateRule(next);
+    g = generate(keep.length ? uuidv7() : rec.id, next, taken);
+    // A antiga termina na véspera do corte: nunca antes do início (o servidor recusa; aí ela é desativada) nem depois da data final que já tinha.
+    const eve = addDays(cut, -1);
+    const end = [rec.start_date, rec.end_date && rec.end_date < eve ? rec.end_date : eve].sort().at(-1);
+    rules = keep.length ? [g.rule, put('recurrence', rec.id, { ...doc(rec), end_date: end, active: eve >= rec.start_date })] : [g.rule];
+  } else {
+    // O que ficava depois da data final antiga nunca foi gerado: a geração recomeça dela (e não de `generated_until`, que pode ter passado).
+    const next = { ...doc(rec), end_date: sched.end_date, generated_until: rec.end_date && (rec.generated_until ?? '') > rec.end_date ? rec.end_date : rec.generated_until ?? null };
+    validateRule(next);
+    g = generate(rec.id, next, taken);
+    rules = [g.rule];
+  }
+  // Regras primeiro (o servidor exige a regra antes de quem a cita); exclusões antes das novas (índice único por regra e data).
+  return { items: [...rules, ...gone.map((t) => del('transaction', t.id)), ...g.txs], rhythm, gone: gone.length, edited };
+}
+
+/** O que `editRule` vai tirar ao mudar ritmo/dia/data final: { rhythm, gone, edited } (ver schedulePlan), ou null se nada disso muda. Não grava. */
+export function scheduleImpact(id, from, changes) {
+  const rec = app.recurrences.find((r) => r.id === id);
+  const p = rec && schedulePlan(rec, from, changes);
+  return p ? { rhythm: p.rhythm, gone: p.gone, edited: p.edited } : null;
+}
+
 /**
  * Edita pela regra (tela de Repetições): mudam a regra e as pendentes com data >= `from`; as anteriores e as efetivadas não.
- * Reaproveita editRecurring: `all` se não há pendente antes de `from`, senão `following` a partir da primeira pendente dali.
+ * Valor, descrição, conta e categoria reaproveitam editRecurring: `all` se não há pendente antes de `from`, senão `following`
+ * a partir da primeira pendente dali. Ritmo, dia e data final: ver schedulePlan (com ritmo novo, esses campos já vão na regra nova).
  */
 export const editRule = (id, from, changes) => serial(async () => {
-  const rec = app.recurrences.find((r) => r.id === id);
+  let rec = app.recurrences.find((r) => r.id === id);
   if (!rec) return;
-  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (rec[k] ?? null)).map((k) => [k, changes[k]]));
-  if (!Object.keys(shared).length) return;
+  const shared = sharedChanges(rec, changes);
+  const plan = schedulePlan(rec, from, changes, shared);
+  if (!plan && !Object.keys(shared).length) return;
   checkTx(shared.amount_cents ?? rec.amount_cents, rec.start_date);
+  if (plan) {
+    await sync.saveMany(plan.items);
+    await reload();
+    if (plan.rhythm || !Object.keys(shared).length) return;
+    rec = app.recurrences.find((r) => r.id === id); // a data final já foi gravada; os outros campos seguem o caminho de sempre
+  }
   const mine = pendingOf(id).sort((a, b) => a.date.localeCompare(b.date));
   const tx = mine.find((t) => t.date >= from);
   if (tx) return editOccurrence(tx, tx === mine[0] ? 'all' : 'following', shared, shared);
   await sync.save('recurrence', id, { ...doc(rec), ...shared }); // nada pendente dali em diante: vale para o que ainda for gerado
+  await reload();
+});
+
+/**
+ * "Repetir de novo": repetição NOVA com os mesmos dados a partir de `start`, sem data final. A encerrada não é regravada
+ * (guarda o histórico). Datas em que ela já tem lançamento não nascem de novo. Recusa se já há uma igual (mesmo tipo, descrição,
+ * valor, conta e categoria, em qualquer ritmo) valendo nessa data: toque dobrado, a própria ainda ativa, ou a metade antiga de
+ * uma repetição que só mudou de dia/ritmo. Sem isso o mesmo aluguel passaria a sair duas vezes.
+ */
+export const repeatAgain = (id, start) => serial(async () => {
+  const rec = app.recurrences.find((r) => r.id === id);
+  if (!rec) return;
+  if (!isValidISO(start)) throw new Error('Data inválida (use uma data entre 1900 e 2200).');
+  if (app.accounts.find((a) => a.id === rec.account_id)?.archived) throw new Error('A conta desta repetição está arquivada.');
+  if (app.recurrences.some((r) => r.active && (!r.end_date || r.end_date >= start) && ['kind', ...RECURRING_FIELDS].every((k) => (r[k] ?? null) === (rec[k] ?? null))))
+    throw new Error('Já existe uma repetição igual a esta valendo nessa data.');
+  const g = generate(uuidv7(), { ...doc(rec), start_date: start, end_date: null, active: true, generated_until: null },
+    new Set(app.transactions.filter((t) => t.recurrence_id === id).map((t) => t.date)));
+  await sync.saveMany([g.rule, ...g.txs]);
   await reload();
 });
 

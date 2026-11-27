@@ -76,7 +76,7 @@ Escalas: espaço de 4 px (`--space-1..16`), raios `--radius-1..4` + `--radius-pi
 Só em dev: `npm run dev` e abra `http://localhost:5173/#/design`. Mostra tokens, todos os componentes e estados, nos dois temas. É carregada por `import()` atrás de `import.meta.env.DEV`: **não entra no bundle de produção**.
 
 ## 8. Orçamento de peso
-Medido em `npm run build` (gzip). JS inicial ≤ **60 KB** (hoje 54,4; era 45 até 27/11/2026, subiu com CSV, busca, notas e a tela de Repetições; o teto do RNF2 é 150), CSS ≤ **15 KB** (hoje 7,5), ≤ **2** arquivos de fonte (Fredoka + Nunito, ~67 KB woff2). Alvo de build ES2022 (`vite.config.js`: Safari 15.4+/Chrome 94+), sem polyfill de modulepreload. Não adicione dependência de runtime; ícones só os usados; sem spread de atributos (puxa `set_attributes` do Svelte).
+Medido em `npm run build` (gzip). JS inicial ≤ **60 KB** (hoje 56,2; era 45 até 27/11/2026, subiu com CSV, busca, notas e a tela de Repetições; o teto do RNF2 é 150), CSS ≤ **15 KB** (hoje 7,5), ≤ **2** arquivos de fonte (Fredoka + Nunito, ~67 KB woff2). Alvo de build ES2022 (`vite.config.js`: Safari 15.4+/Chrome 94+), sem polyfill de modulepreload. Não adicione dependência de runtime; ícones só os usados; sem spread de atributos (puxa `set_attributes` do Svelte).
 
 ## 9. Fluxo dos tokens
 1. Edite `docs/design/tokens/tokens.css`. 2. `cd frontend && npm run sync:tokens`. 3. `node docs/design/tokens/contraste.mjs` (AA, daltonismo; sai com erro se falhar). 4. `npm test` (inclui a deriva fonte × cópia) e `npm run lint:css`.

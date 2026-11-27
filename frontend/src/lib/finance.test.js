@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { money, parseMoney } from './format.js';
 import {
   addMonths, addDays, occurrences, splitInstallments, balances, monthView, materialize, horizon, shiftMonth, monthEnd,
-  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment, filterTxs, rhythm, recurrenceView,
+  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment, filterTxs, rhythm, recurrenceView, nextOccurrence,
 } from './finance.js';
 
 const nbsp = (s) => s.replace(/ /g, ' ');
@@ -405,4 +405,14 @@ test('recurrenceView: conta arquivada fica fora do resumo (como na aba Mês), ma
   const v = recurrenceView([rec], txs, '2026-11-27', new Set(), new Set(['velha']));
   assert.equal(v.expense_cents, 300);
   assert.equal(v.rows[0].pending.length, 2);
+});
+
+test('nextOccurrence: primeira data do ritmo de uma data em diante, sem olhar a data final', () => {
+  assert.equal(nextOccurrence(rule({}), '2026-02-01'), '2026-02-28'); // dia 31 encolhe em fevereiro
+  assert.equal(nextOccurrence(rule({}), '2026-03-31'), '2026-03-31');
+  assert.equal(nextOccurrence(rule({}), '2025-06-01'), '2026-01-31', 'antes do início: o início');
+  assert.equal(nextOccurrence(rule({ end_date: '2026-02-01' }), '2026-03-01'), '2026-03-31');
+  assert.equal(nextOccurrence(rule({ frequency: 'weekly', interval_n: 2, start_date: '2026-01-01' }), '2026-01-20'), '2026-01-29');
+  assert.equal(nextOccurrence(rule({ frequency: 'yearly', interval_n: 1000 }), '2200-01-01'), null, 'passou de 2200');
+  assert.equal(nextOccurrence(rule({}), '2026-02-30'), null, 'data inválida');
 });

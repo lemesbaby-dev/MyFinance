@@ -37,7 +37,7 @@ const db = await import('./db.js');
 const sync = await import('./sync.js');
 const A = await import(pathToFileURL(join(dir, 'app.svelte.mjs')).href);
 const { app } = A;
-const { addMonths, addDays, horizon, todayISO } = await import('./finance.js');
+const { addMonths, addDays, horizon, todayISO, occurrences, isValidISO } = await import('./finance.js');
 
 beforeEach(async () => {
   await A.idle();
@@ -491,4 +491,229 @@ test('editRule: muda só as pendentes a partir da data; anteriores e efetivadas 
   await A.editRule(s.id, mine[0].date, { description: 'Novo nome', amount_cents: s.amount_cents, account_id: s.account_id, category_id: null });
   assert.equal(await db.pending(), q);
   await assert.rejects(A.editRule(s.id, mine[0].date, { amount_cents: 0 }), /Valor inválido/);
+});
+
+// ---------- issue #33: mudar dia/ritmo/data final e "Repetir de novo" (relógio controlado) ----------
+
+const NOW = new Date(2026, 10, 27, 12); // 27/11/2026: horizonte em 27/11/2027
+const clock = (t) => t.mock.timers.enable({ apis: ['Date'], now: NOW });
+const H = '2027-11-27';
+const monthly = (over = {}) => seed({ start_date: '2026-08-05', ...over }); // 05/08..05/11 atrasadas; 05/12/2026..05/11/2027 futuras
+const tx = (rid, date) => occ(rid).find((t) => t.date === date);
+const dates = (rid, status) => occ(rid).filter((t) => !status || t.status === status).map((t) => t.date);
+const expected = (r, from, to = H) => occurrences({ frequency: r.frequency, interval_n: r.interval_n, start_date: r.start_date, end_date: r.end_date }, from, to);
+const other = (...ids) => app.recurrences.find((r) => !ids.includes(r.id));
+
+// Servidor de mentira: reaplica a fila na ordem e falha no que o servidor recusaria (validate.go e sync.go).
+async function assertServerAccepts() {
+  const live = new Map();
+  const dead = new Set();
+  for (const o of await db.nextOps(100000)) {
+    const key = `${o.kind}/${o.id}`;
+    if (o.action === 'delete') { live.delete(key); dead.add(key); continue; }
+    assert.ok(!dead.has(key), `${key}: gravado depois de excluído`);
+    const d = o.data;
+    if (o.kind === 'recurrence') {
+      assert.ok(['daily', 'weekly', 'monthly', 'yearly'].includes(d.frequency) && Number.isInteger(d.interval_n) && d.interval_n >= 1 && d.interval_n <= 1000, `${o.id}: ritmo inválido`);
+      assert.ok(isValidISO(d.start_date) && (d.end_date == null || (isValidISO(d.end_date) && d.end_date >= d.start_date)), `${o.id}: data final ${d.end_date} antes do início ${d.start_date}`);
+    }
+    if (o.kind === 'transaction' && d.recurrence_id) {
+      assert.ok(live.get(key)?.recurrence_id === d.recurrence_id || live.has(`recurrence/${d.recurrence_id}`), `${o.id}: a regra tem de chegar antes`);
+      for (const [k, x] of live) assert.ok(k === key || !k.startsWith('transaction/') || x.recurrence_id !== d.recurrence_id || x.date !== d.date, `${d.date} duplicada na regra ${d.recurrence_id}`);
+    }
+    live.set(key, d);
+  }
+}
+
+// Vale depois de qualquer ação: estender 2x não muda nada; com o relógio adiantado só nasce o que o ritmo de uma
+// regra ativa pede, depois do horizonte antigo; nenhuma data repetida por regra; o servidor aceitaria tudo.
+async function assertStable(t) {
+  const snap = () => app.transactions.map((x) => `${x.recurrence_id}|${x.date}|${x.id}`).sort();
+  const before = snap();
+  const q = await db.pending();
+  await A.extendRecurrences();
+  await A.extendRecurrences();
+  assert.deepEqual(snap(), before, 'estender não muda nada');
+  assert.equal(await db.pending(), q, 'nem regrava regra');
+  const ids = new Set(app.transactions.map((x) => x.id));
+  t.mock.timers.setTime(+new Date(2027, 0, 20, 12));
+  await A.extendRecurrences();
+  await A.extendRecurrences();
+  for (const x of app.transactions.filter((y) => !ids.has(y.id))) {
+    const r = rule(x.recurrence_id);
+    assert.ok(x.date > H && r.active && occurrences(r, x.date, x.date).length === 1, `${x.date} não deveria nascer na regra ${r.id}`);
+  }
+  for (const r of app.recurrences) assert.equal(new Set(dates(r.id)).size, dates(r.id).length, `data repetida na regra ${r.id}`);
+  await assertServerAccepts();
+  t.mock.timers.setTime(+NOW);
+}
+
+test('#33 dia 5 → dia 10 a partir da próxima: antiga termina na véspera, atrasadas e efetivada ficam, nota é contada', async (t) => {
+  clock(t);
+  const r = await monthly();
+  await A.setPaid(tx(r.id, '2026-08-05'), true);
+  await A.saveTx(tx(r.id, '2027-02-05').id, { notes: 'reajuste' });
+  await A.saveTx(tx(r.id, '2027-03-05').id, { amount_cents: 12345 }); // mudada à mão
+  const kept = occ(r.id).filter((x) => x.date < '2026-12-05');
+  const ch = { start_date: '2026-12-10', amount_cents: 20000 };
+  assert.deepEqual(A.scheduleImpact(r.id, '2026-12-05', ch), { rhythm: true, gone: 12, edited: 2 });
+  await A.editRule(r.id, '2026-12-05', ch);
+
+  const nr = other(r.id);
+  assert.deepEqual(occ(r.id), kept, 'efetivada e atrasadas iguais (mesmos ids e campos)');
+  assert.deepEqual([rule(r.id).end_date, rule(r.id).active, rule(r.id).amount_cents], ['2026-12-04', true, 10000]);
+  assert.deepEqual([nr.start_date, nr.frequency, nr.interval_n, nr.end_date, nr.amount_cents, nr.description, nr.account_id], ['2026-12-10', 'monthly', 1, null, 20000, 'Aluguel', r.account_id]);
+  assert.deepEqual(dates(nr.id), expected(nr, '2026-12-10'));
+  assert.equal(dates(nr.id).length, 12);
+  assert.ok(occ(nr.id).every((x) => x.status === 'pending' && x.amount_cents === 20000 && !x.notes));
+  await assertRuleBeforeOccurrences();
+  await assertStable(t);
+});
+
+test('#33 mensal → semanal a partir do meio e de data que não é ocorrência', async (t) => {
+  clock(t);
+  const r = await monthly();
+  await A.editRule(r.id, '2027-03-05', { frequency: 'weekly' }); // sem data nova: a base é a data escolhida
+  const w = other(r.id);
+  assert.deepEqual(dates(r.id), expected(r, '2026-08-05', '2027-03-04'), 'as pendentes antes da data ficam');
+  assert.equal(rule(r.id).end_date, '2027-03-04');
+  assert.deepEqual([w.frequency, w.start_date], ['weekly', '2027-03-05']);
+  assert.deepEqual(dates(w.id), expected(w, '2027-03-05'));
+
+  await A.editRule(w.id, '2027-06-01', { frequency: 'monthly', interval_n: 1, start_date: '2027-06-01' }); // 01/06 não é sexta
+  const m = other(r.id, w.id);
+  assert.equal(rule(w.id).end_date, '2027-05-31');
+  assert.deepEqual(dates(w.id), expected(w, '2027-03-05', '2027-05-31'));
+  assert.deepEqual(dates(m.id), expected(m, '2027-06-01'));
+  assert.deepEqual(dates(m.id).slice(0, 2), ['2027-06-01', '2027-07-01']);
+  await assertStable(t);
+});
+
+test('#33 dia mais cedo (5 → 1): corta na data nova, sem lançamento dobrado no mês', async (t) => {
+  clock(t);
+  const r = await monthly();
+  await A.editRule(r.id, '2026-12-05', { start_date: '2026-12-01' });
+  const nr = other(r.id);
+  assert.equal(rule(r.id).end_date, '2026-11-30');
+  assert.deepEqual(dates(r.id), ['2026-08-05', '2026-09-05', '2026-10-05', '2026-11-05']);
+  assert.deepEqual(dates(nr.id), expected(nr, '2026-12-01'));
+  // a metade antiga aparece como encerrada: "Repetir de novo" nela dobraria o aluguel
+  await assert.rejects(A.repeatAgain(r.id, '2026-12-05'), /igual/);
+  await assertStable(t);
+});
+
+test('#33 intervalo 1 → 2: efetivada adiantada fica na regra antiga e a data dela não nasce de novo', async (t) => {
+  clock(t);
+  const r = await monthly();
+  await A.setPaid(tx(r.id, '2027-02-05'), true);
+  const paid = tx(r.id, '2027-02-05');
+  await A.editRule(r.id, '2026-12-05', { interval_n: 2, start_date: '2026-12-05' });
+  const nr = other(r.id);
+  assert.equal(nr.interval_n, 2);
+  assert.deepEqual(tx(r.id, '2027-02-05'), paid);
+  assert.deepEqual(dates(nr.id), ['2026-12-05', '2027-04-05', '2027-06-05', '2027-08-05', '2027-10-05']);
+  assert.deepEqual(dates(r.id), ['2026-08-05', '2026-09-05', '2026-10-05', '2026-11-05', '2027-02-05']);
+  await assertStable(t);
+});
+
+test('#33 a partir da primeira: sem nada para guardar a regra muda no lugar; com efetivada a antiga encerra', async (t) => {
+  clock(t);
+  const r = await seed({ start_date: '2026-12-05' });
+  await A.editRule(r.id, '2026-12-05', { start_date: '2026-12-10' });
+  assert.equal(app.recurrences.length, 1, 'nenhuma regra vazia sobra');
+  assert.deepEqual([rule(r.id).start_date, rule(r.id).end_date, rule(r.id).active], ['2026-12-10', null, true]);
+  assert.deepEqual(dates(r.id), expected(rule(r.id), '2026-12-10'));
+
+  const s = await seed({ start_date: '2026-12-05' });
+  await A.setPaid(tx(s.id, '2026-12-05'), true); // paga adiantado
+  await A.editRule(s.id, '2026-12-05', { frequency: 'weekly' });
+  const w = other(r.id, s.id);
+  assert.deepEqual([rule(s.id).end_date, rule(s.id).active], ['2026-12-05', false], 'data final nunca antes do início');
+  assert.deepEqual(dates(s.id), ['2026-12-05']);
+  assert.deepEqual(dates(w.id), expected(w, '2026-12-12'), '05/12 já existe (efetivada): não nasce de novo');
+  await assertStable(t);
+});
+
+test('#33 data final: definir, mudar e tirar, sem data duplicada nem sumida', async (t) => {
+  clock(t);
+  const r = await monthly();
+  const all = dates(r.id);
+  await A.saveTx(tx(r.id, '2027-05-05').id, { notes: 'última' });
+  await A.setPaid(tx(r.id, '2027-06-05'), true); // paga adiantado, depois da data final que vem
+  assert.deepEqual(A.scheduleImpact(r.id, '2026-12-05', { end_date: '2027-03-31' }), { rhythm: false, gone: 7, edited: 1 });
+  await A.editRule(r.id, '2026-12-05', { end_date: '2027-03-31' });
+  assert.equal(app.recurrences.length, 1, 'mudar só a data final não divide a regra');
+  assert.equal(rule(r.id).end_date, '2027-03-31');
+  assert.deepEqual(dates(r.id, 'pending'), all.filter((d) => d <= '2027-03-31'));
+  assert.deepEqual(dates(r.id, 'paid'), ['2027-06-05']);
+  await assertStable(t);
+
+  const q = await db.pending();
+  await A.editRule(r.id, '2026-12-05', { end_date: '2027-03-31' });
+  assert.equal(await db.pending(), q, 'mesma data final: não grava');
+
+  await A.editRule(r.id, '2026-12-05', { end_date: '2027-07-31' }); // mais longe: nascem as que faltam
+  assert.deepEqual(dates(r.id), all.filter((d) => d <= '2027-07-31'));
+  await assertStable(t);
+
+  await A.editRule(r.id, '2026-12-05', { end_date: null, amount_cents: 15000 }); // tirar, junto com o valor
+  const nr = other(r.id); // há atrasadas antes da data: o valor divide a regra, como já fazia
+  assert.deepEqual([...dates(r.id), ...dates(nr.id)].sort(), all, 'todas as datas de volta, uma vez só');
+  assert.deepEqual([rule(r.id).end_date, nr.end_date, nr.amount_cents], ['2026-12-04', null, 15000]);
+  assert.deepEqual(dates(r.id, 'paid'), ['2027-06-05']);
+  assert.ok(occ(nr.id).every((x) => x.amount_cents === 15000));
+  await assertStable(t);
+
+  await assert.rejects(A.editRule(nr.id, '2026-12-05', { end_date: '2026-11-20' }), /antes de hoje/);
+  const f = await seed({ start_date: '2027-01-10' });
+  await assert.rejects(A.editRule(f.id, '2027-01-10', { end_date: '2026-12-31' }), /data final/);
+  await assert.rejects(A.editRule(f.id, '2027-01-10', { interval_n: 0 }), /intervalo/);
+  await assert.rejects(A.editRule(f.id, '2027-01-10', { start_date: '2027-02-30' }), /Data inválida/);
+  await assertStable(t);
+});
+
+test('#33 Repetir de novo: encerrada por endRecurrence, duas vezes seguidas, sem duplicar', async (t) => {
+  clock(t);
+  const r = await monthly();
+  await A.setPaid(tx(r.id, '2026-08-05'), true);
+  await A.endRecurrence(r.id);
+  const old = rule(r.id);
+  const left = occ(r.id);
+  await A.repeatAgain(r.id, '2026-12-05');
+  const b = other(r.id);
+  assert.deepEqual(rule(r.id), old, 'a encerrada não é regravada');
+  assert.deepEqual(occ(r.id), left, 'nem os lançamentos dela');
+  assert.deepEqual([b.start_date, b.end_date, b.active, b.frequency, b.interval_n, b.amount_cents, b.description, b.kind, b.account_id, b.category_id],
+    ['2026-12-05', null, true, 'monthly', 1, 10000, 'Aluguel', 'expense', r.account_id, null]);
+  assert.deepEqual(dates(b.id), expected(b, '2026-12-05'));
+  await assertRuleBeforeOccurrences();
+
+  await assert.rejects(A.repeatAgain(r.id, '2026-12-05'), /igual/); // toque dobrado: não cria outra
+  await assert.rejects(A.repeatAgain(b.id, '2027-01-05'), /igual/); // a própria ainda está valendo
+  assert.equal(app.recurrences.length, 2);
+  await assertStable(t);
+
+  await A.endRecurrence(b.id);
+  assert.equal(occ(b.id).length, 0);
+  await A.repeatAgain(b.id, '2027-01-10');
+  const c = other(r.id, b.id);
+  assert.deepEqual(dates(c.id), expected(c, '2027-01-10'));
+  await assert.rejects(A.repeatAgain(r.id, '2027-02-30'), /Data inválida/);
+  await assertStable(t);
+});
+
+test('#33 Repetir de novo: acabou pela data final; data de recomeço que já tem lançamento não duplica', async (t) => {
+  clock(t);
+  const r = await seed({ start_date: '2026-03-05', end_date: '2026-09-30', interval_n: 2 });
+  assert.deepEqual(dates(r.id), ['2026-03-05', '2026-05-05', '2026-07-05', '2026-09-05']);
+  await assert.rejects(A.repeatAgain(r.id, '2026-09-05'), /igual/); // nessa data a antiga ainda valia
+  await A.saveTx(tx(r.id, '2026-09-05').id, { date: '2026-11-05' }); // atrasada adiada à mão para a data do recomeço
+  const old = rule(r.id);
+  await A.repeatAgain(r.id, '2026-11-05');
+  const b = other(r.id);
+  assert.deepEqual(rule(r.id), old);
+  assert.deepEqual([b.start_date, b.end_date, b.interval_n], ['2026-11-05', null, 2]);
+  assert.deepEqual(dates(b.id), expected(b, '2027-01-05'), '05/11 já tem lançamento na antiga: não nasce de novo');
+  assert.deepEqual(dates(r.id), ['2026-03-05', '2026-05-05', '2026-07-05', '2026-11-05']);
+  await assertStable(t);
 });
