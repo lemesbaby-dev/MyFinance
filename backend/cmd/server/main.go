@@ -37,6 +37,12 @@ func main() {
 		log.Fatalf("MAX_USERS inválido: %q (use um inteiro >= 0)", os.Getenv("MAX_USERS"))
 	}
 
+	// Retenção dos tombstones (exclusões) antes do GC. "0" desliga a limpeza.
+	gcDays, err := retentionDays(env("TOMBSTONE_RETENTION_DAYS", "180"))
+	if err != nil {
+		log.Fatalf("TOMBSTONE_RETENTION_DAYS inválido: %q (use um inteiro de 0 a %d; 0 desliga)", os.Getenv("TOMBSTONE_RETENTION_DAYS"), maxRetentionDays)
+	}
+
 	st, err := store.Open(*dbPath)
 	if err != nil {
 		log.Fatalf("abrindo banco: %v", err)
@@ -65,6 +71,9 @@ func main() {
 	// Desligamento gracioso: termina as requisições em curso e só então fecha o banco.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if gcDays > 0 {
+		go gcLoop(ctx, st, time.Duration(gcDays)*24*time.Hour)
+	}
 	done := make(chan struct{})
 	failed := false
 	go func() {
@@ -86,6 +95,36 @@ func main() {
 	st.Close()
 	if failed {
 		os.Exit(1)
+	}
+}
+
+// maxRetentionDays: teto de TOMBSTONE_RETENTION_DAYS (100 anos). Acima de ~106 mil dias a conversão para
+// time.Duration estoura int64, a retenção fica negativa e o GC apagaria TODOS os tombstones.
+const maxRetentionDays = 36500
+
+func retentionDays(v string) (int, error) {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > maxRetentionDays {
+		return 0, errors.New("fora do intervalo")
+	}
+	return n, nil
+}
+
+// gcLoop limpa os tombstones antigos na subida e depois uma vez por dia, até o processo encerrar.
+func gcLoop(ctx context.Context, st *store.Store, retention time.Duration) {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		if n, err := st.GC(retention); err != nil {
+			log.Printf("gc de tombstones: %v", err)
+		} else if n > 0 {
+			log.Printf("gc de tombstones: %d removidos", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 	}
 }
 

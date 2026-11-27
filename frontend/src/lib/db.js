@@ -100,13 +100,17 @@ async function forgetRejected(meta, items) {
 // Várias gravações numa transação só (tudo ou nada). item = {kind,id,data} ou {kind,id,remove:true}.
 export function saveMany(items) {
   return tx(['entities', 'outbox', 'meta'], 'readwrite', async (s) => {
+    const rej = (await wrap(s.meta.get('rejected')))?.value ?? [];
     for (const { kind, id, data, remove: del } of items) {
       if (del) {
         s.entities.delete([kind, id]);
         s.outbox.add({ op_id: uuidv7(), kind, id, action: 'delete' });
       } else {
+        // create: o servidor nunca teve este documento (não havia cópia local, ou o envio anterior foi recusado).
+        // Marca só local (não vai no push); replaceAll usa para não recriar o que foi excluído em outro aparelho.
+        const create = !(await wrap(s.entities.get([kind, id]))) || rej.some((r) => r.action === 'upsert' && r.kind === kind && r.id === id);
         s.entities.put({ kind, id, data });
-        s.outbox.add({ op_id: uuidv7(), kind, id, action: 'upsert', data });
+        s.outbox.add({ op_id: uuidv7(), kind, id, action: 'upsert', data, create });
       }
     }
     await forgetRejected(s.meta, items);
@@ -177,6 +181,52 @@ export function applyChanges(changes, cursor, g) {
   });
 }
 
+// Ressincronização completa: o servidor já descartou exclusões que esta cópia não viu (GC de tombstones), então o
+// pull incremental não serve. `changes` é a leitura inteira do servidor; a cópia local passa a ser esse estado
+// MAIS a fila pendente, que não é tocada (como em applyChanges, item na fila não é sobrescrito).
+// Exceção: upsert na fila de um documento que o servidor não tem e que não é criação editaria algo já excluído.
+// Enviá-lo recriaria o documento; ele sai da fila e vira "recusado" (mesmo destino do `gone` no push).
+export function replaceAll(changes, cursor, g) {
+  return tx(['entities', 'outbox', 'meta'], 'readwrite', async (s) => {
+    checkGen(g);
+    const key = (o) => o.kind + '/' + o.id;
+    const server = new Map(changes.map((c) => [key(c), c])); // páginas em ordem de rev: a última versão vence
+    const alive = new Set([...server.values()].filter((c) => !c.deleted).map(key)); // existe no servidor (ou vai existir, pela fila)
+    const list = (await wrap(s.meta.get('rejected')))?.value ?? [];
+    const queued = new Set();
+    const parked = new Set(list.filter((r) => r.action === 'upsert').map(key)); // recusados: a cópia local espera o usuário
+    const gone = new Map();
+    for (const op of await wrap(s.outbox.getAll())) {
+      const k = key(op);
+      if (op.action === 'delete') alive.delete(k);
+      else if (alive.has(k) || op.create) alive.add(k);
+      else {
+        s.outbox.delete(op.seq);
+        // Fila gravada por versão anterior do app não tem a marca: pode ser criação. Na dúvida a cópia local fica
+        // (como qualquer recusado: fora dos saldos, o usuário descarta ou salva de novo) e a mensagem não afirma
+        // uma exclusão que talvez não tenha existido.
+        const unmarked = op.create === undefined;
+        gone.set(k, { kind: op.kind, id: op.id, action: 'upsert', label: op.data?.name ?? op.data?.description ?? '',
+          error: unmarked ? 'não foi enviado; salve de novo para manter' : 'foi excluído em outro aparelho' });
+        if (unmarked) parked.add(k);
+        continue;
+      }
+      queued.add(k);
+    }
+    for (const [kind, id] of await wrap(s.entities.getAllKeys())) {
+      const k = kind + '/' + id;
+      if (!queued.has(k) && !parked.has(k) && !server.has(k)) s.entities.delete([kind, id]);
+    }
+    for (const [k, c] of server) {
+      if (queued.has(k)) continue;
+      if (c.deleted) s.entities.delete([c.kind, c.id]);
+      else s.entities.put({ kind: c.kind, id: c.id, data: c.data });
+    }
+    if (gone.size) s.meta.put({ key: 'rejected', value: [...list, ...gone.values()] });
+    s.meta.put({ key: 'cursor', value: cursor });
+  });
+}
+
 // Geração da cópia local: sobe a cada wipe, para um sync em andamento descartar o resultado.
 let gen = 0;
 export const generation = () => gen;
@@ -188,7 +238,7 @@ export const checkGen = (g) => {
 export const requeueAll = () =>
   tx(['entities', 'outbox'], 'readwrite', async (s) => {
     for (const r of await wrap(s.entities.getAll())) {
-      s.outbox.add({ op_id: uuidv7(), kind: r.kind, id: r.id, action: 'upsert', data: r.data });
+      s.outbox.add({ op_id: uuidv7(), kind: r.kind, id: r.id, action: 'upsert', data: r.data, create: true }); // o servidor perdeu: é criação
     }
   });
 

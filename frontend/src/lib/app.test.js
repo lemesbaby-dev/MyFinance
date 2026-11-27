@@ -391,6 +391,22 @@ test('notas em ocorrência de recorrência valem só para ela, mesmo editando "t
   assert.ok(!('notes' in rule(r.id)), 'regra não ganha campo novo');
 });
 
+test('extendRecurrences não regrava regra recusada (senão o push a recriaria todo dia)', async () => {
+  await A.saveAccount('acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  const data = { kind: 'expense', description: 'Aluguel', amount_cents: 10000, account_id: 'acc', category_id: null,
+    frequency: 'monthly', interval_n: 1, start_date: START, end_date: null, active: true, generated_until: null };
+  await db.save('recurrence', 'ok', data);
+  await db.save('recurrence', 'recusada', data);
+  // a regra saiu da fila como recusada (ex.: excluída em outro aparelho); a cópia local espera o usuário
+  await db.settle({ ack: (await db.nextOps(10)).map((o) => o.seq), rejected: [{ kind: 'recurrence', id: 'recusada', action: 'upsert', error: 'foi excluído em outro aparelho' }] });
+  await A.reload();
+  await A.extendRecurrences();
+  assert.ok(occ('ok').length > 0, 'as outras regras seguem gerando');
+  assert.equal(occ('recusada').length, 0);
+  assert.equal((await db.nextOps(1000)).some((o) => o.id === 'recusada' || o.data?.recurrence_id === 'recusada'), false, 'nada da regra recusada volta para a fila');
+  assert.equal((await db.getMeta('rejected')).length, 1, 'e ela continua recusada');
+});
+
 test('endRecurrence: saem só as pendentes de hoje em diante; atrasadas e efetivadas ficam; grava end_date e nada mais é gerado', async () => {
   const today = todayISO();
   const r = await seed();

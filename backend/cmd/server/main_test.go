@@ -21,3 +21,17 @@ func TestSpaSemListagemDeAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestRetentionDays(t *testing.T) {
+	for in, want := range map[string]int{"0": 0, "180": 180, "36500": 36500} {
+		if got, err := retentionDays(in); err != nil || got != want {
+			t.Errorf("%q = %d, %v; quero %d", in, got, err, want)
+		}
+	}
+	// acima do teto a duração estouraria int64 e ficaria negativa: o GC apagaria TODOS os tombstones
+	for _, in := range []string{"36501", "106752", "999999999", "-1", "1.5", "abc", ""} {
+		if _, err := retentionDays(in); err == nil {
+			t.Errorf("%q deveria ser recusado", in)
+		}
+	}
+}

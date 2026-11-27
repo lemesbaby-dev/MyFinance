@@ -68,7 +68,10 @@ export function clearApp() {
 export const extendRecurrences = () => serial(async () => {
   const h = horizon(todayISO());
   const items = [];
+  const rejected = await db.getMeta('rejected', []);
   for (const rec of await db.list('recurrence')) { // lê do banco: a cópia em memória pode estar velha
+    // regra recusada espera o usuário (descartar ou salvar de novo): regravá-la aqui a reenviaria sozinha, todo dia
+    if (rejected.some((r) => r.kind === 'recurrence' && r.id === rec.id)) continue;
     const m = materialize(rec, h, uuidv7);
     if ((m.generated_until ?? '') <= (rec.generated_until ?? '')) continue; // nunca regrava com valor menor/igual
     items.push(...m.txs.map((t) => put('transaction', t.id, t.data)), put('recurrence', rec.id, { ...doc(rec), generated_until: m.generated_until }));

@@ -34,7 +34,7 @@ func TestCotaDeLinhas(t *testing.T) {
 	MaxRows = 3
 	st, uid := open(t)
 	for i := 0; i < 5; i++ {
-		res, err := st.Push(uid, []Op{acc(fmt.Sprint("a", i))})
+		res, err := st.Push(uid, 0, []Op{acc(fmt.Sprint("a", i))})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,12 +47,12 @@ func TestCotaDeLinhas(t *testing.T) {
 		}
 	}
 	// editar o que já existe não conta como linha nova; excluir libera espaço
-	if res, _ := st.Push(uid, []Op{{OpID: "ed", Kind: "account", ID: "a0", Action: "upsert",
+	if res, _ := st.Push(uid, 0, []Op{{OpID: "ed", Kind: "account", ID: "a0", Action: "upsert",
 		Data: json.RawMessage(`{"name":"Editada","type":"cash","initial_balance_cents":1,"archived":false}`)}}); res[0].Status != "ok" {
 		t.Errorf("edição bloqueada pela cota: %+v", res[0])
 	}
-	st.Push(uid, []Op{{OpID: "del", Kind: "account", ID: "a1", Action: "delete"}})
-	if res, _ := st.Push(uid, []Op{acc("a9")}); res[0].Status != "ok" {
+	st.Push(uid, 0, []Op{{OpID: "del", Kind: "account", ID: "a1", Action: "delete"}})
+	if res, _ := st.Push(uid, 0, []Op{acc("a9")}); res[0].Status != "ok" {
 		t.Errorf("excluir deveria liberar cota: %+v", res[0])
 	}
 }
@@ -61,8 +61,8 @@ func TestCotaDeBytes(t *testing.T) {
 	defer func(b int64) { MaxBytes = b }(MaxBytes)
 	MaxBytes = 100
 	st, uid := open(t)
-	r1, _ := st.Push(uid, []Op{acc("a1")}) // 73 bytes
-	r2, _ := st.Push(uid, []Op{acc("a2")})
+	r1, _ := st.Push(uid, 0, []Op{acc("a1")}) // 73 bytes
+	r2, _ := st.Push(uid, 0, []Op{acc("a2")})
 	if r1[0].Status != "ok" || r2[0].Status != "rejected" {
 		t.Errorf("cota de bytes: %+v %+v", r1[0], r2[0])
 	}
@@ -71,7 +71,7 @@ func TestCotaDeBytes(t *testing.T) {
 func TestPushNaoVazaEntreLotes(t *testing.T) {
 	// erro de banco (usuário inexistente) aborta o lote inteiro e não grava nada
 	st, _ := open(t)
-	if _, err := st.Push("fantasma", []Op{acc("a1")}); err == nil {
+	if _, err := st.Push("fantasma", 0, []Op{acc("a1")}); err == nil {
 		t.Error("usuário inexistente deveria falhar")
 	}
 	var n int
@@ -85,17 +85,17 @@ func TestCotaDeBytesVaiTambemNoUpdate(t *testing.T) {
 	defer func(b int64) { MaxBytes = b }(MaxBytes)
 	MaxBytes = 100
 	st, uid := open(t)
-	st.Push(uid, []Op{acc("a1")}) // 73 bytes
+	st.Push(uid, 0, []Op{acc("a1")}) // 73 bytes
 	big := Op{OpID: "big", Kind: "account", ID: "a1", Action: "upsert",
 		Data: json.RawMessage(`{"name":"` + strings.Repeat("é", 40) + `","type":"cash","initial_balance_cents":0,"archived":false}`)}
-	if res, _ := st.Push(uid, []Op{big}); res[0].Status != "rejected" { // 40 caracteres, 80 bytes
+	if res, _ := st.Push(uid, 0, []Op{big}); res[0].Status != "rejected" { // 40 caracteres, 80 bytes
 		t.Errorf("update inflando bytes passou: %+v", res[0])
 	}
 }
 
 func TestDeleteDesconhecidoENaoGravaTombstone(t *testing.T) {
 	st, uid := open(t)
-	res, _ := st.Push(uid, []Op{{OpID: "d", Kind: "account", ID: "x", Action: "delete"}})
+	res, _ := st.Push(uid, 0, []Op{{OpID: "d", Kind: "account", ID: "x", Action: "delete"}})
 	var n int
 	st.db.QueryRow(`SELECT COUNT(*) FROM entities`).Scan(&n)
 	if res[0].Status != "ok" || n != 0 {
@@ -109,7 +109,7 @@ func TestTetoDeTombstones(t *testing.T) {
 	st, uid := open(t)
 	for i := 0; i < 5; i++ {
 		id := fmt.Sprint("a", i)
-		res, _ := st.Push(uid, []Op{acc(id)})
+		res, _ := st.Push(uid, 0, []Op{acc(id)})
 		want := "ok"
 		if i == 4 {
 			want = "rejected"
@@ -117,7 +117,7 @@ func TestTetoDeTombstones(t *testing.T) {
 		if res[0].Status != want {
 			t.Errorf("conta %d: %s, quero %s", i, res[0].Status, want)
 		}
-		st.Push(uid, []Op{{OpID: "del" + id, Kind: "account", ID: id, Action: "delete"}})
+		st.Push(uid, 0, []Op{{OpID: "del" + id, Kind: "account", ID: id, Action: "delete"}})
 	}
 	var d string
 	st.db.QueryRow(`SELECT data FROM entities WHERE id='a0'`).Scan(&d)
@@ -128,10 +128,10 @@ func TestTetoDeTombstones(t *testing.T) {
 
 func TestSyncOpsSoGuardaOk(t *testing.T) {
 	st, uid := open(t)
-	st.Push(uid, []Op{{OpID: "x y", Kind: "account", ID: "a", Action: "upsert"}, {OpID: "ruim", Kind: "account", ID: "a", Action: "upsert",
+	st.Push(uid, 0, []Op{{OpID: "x y", Kind: "account", ID: "a", Action: "upsert"}, {OpID: "ruim", Kind: "account", ID: "a", Action: "upsert",
 		Data: json.RawMessage(`{}`)}, acc("a1")})
 	st.db.Exec(`UPDATE sync_ops SET applied_at=datetime('now','-100 days')`)
-	st.Push(uid, []Op{acc("a2")}) // poda a antiga
+	st.Push(uid, 0, []Op{acc("a2")}) // poda a antiga
 	var n int
 	st.db.QueryRow(`SELECT COUNT(*) FROM sync_ops`).Scan(&n)
 	if n != 1 {
@@ -141,13 +141,13 @@ func TestSyncOpsSoGuardaOk(t *testing.T) {
 
 func TestRecorrenciaGeneratedUntil(t *testing.T) {
 	st, uid := open(t)
-	st.Push(uid, []Op{acc("a1")})
+	st.Push(uid, 0, []Op{acc("a1")})
 	rec := func(id, gu string) Op {
 		return Op{OpID: "op-" + id, Kind: "recurrence", ID: id, Action: "upsert", Data: json.RawMessage(
 			`{"kind":"expense","description":"x","amount_cents":1,"account_id":"a1","category_id":null,"frequency":"monthly",` +
 				`"interval_n":1,"start_date":"2026-10-01","end_date":null,"active":true,"generated_until":` + gu + `}`)}
 	}
-	res, _ := st.Push(uid, []Op{rec("r1", `"2027-10-15"`), rec("r2", `null`), rec("r3", `"2027-02-30"`)})
+	res, _ := st.Push(uid, 0, []Op{rec("r1", `"2027-10-15"`), rec("r2", `null`), rec("r3", `"2027-02-30"`)})
 	if res[0].Status != "ok" || res[1].Status != "ok" || res[2].Status != "rejected" {
 		t.Errorf("generated_until: %+v", res)
 	}
@@ -173,7 +173,7 @@ func count(t *testing.T, st *Store, q string, args ...any) (n int) {
 func TestSyncOpsTemTeto(t *testing.T) {
 	// 500 upserts repetidos (op_id novo a cada um) em 5 lotes: sem a poda por contagem viraria 2500 linhas.
 	st, uid := open(t)
-	st.Push(uid, []Op{acc("a1")})
+	st.Push(uid, 0, []Op{acc("a1")})
 	n := 0
 	for b := 0; b < 5; b++ {
 		ops := make([]Op, 500)
@@ -182,7 +182,7 @@ func TestSyncOpsTemTeto(t *testing.T) {
 			ops[i] = acc("a1")
 			ops[i].OpID = fmt.Sprint("novo-", n)
 		}
-		if _, err := st.Push(uid, ops); err != nil {
+		if _, err := st.Push(uid, 0, ops); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,7 +190,7 @@ func TestSyncOpsTemTeto(t *testing.T) {
 		t.Errorf("sync_ops = %d, quero %d", got, KeepSyncOps)
 	}
 	// o mais recente continua lembrado (reenvio vira dup); o mais antigo foi esquecido
-	if res, _ := st.Push(uid, []Op{func() Op { o := acc("a1"); o.OpID = "novo-2500"; return o }()}); res[0].Status != "dup" {
+	if res, _ := st.Push(uid, 0, []Op{func() Op { o := acc("a1"); o.OpID = "novo-2500"; return o }()}); res[0].Status != "dup" {
 		t.Errorf("op recente deveria ser dup: %+v", res[0])
 	}
 }
@@ -198,9 +198,9 @@ func TestSyncOpsTemTeto(t *testing.T) {
 func TestContadoresDeUsoBatemComAVarredura(t *testing.T) {
 	st, uid := open(t)
 	for i := 0; i < 4; i++ {
-		st.Push(uid, []Op{acc(fmt.Sprint("a", i))})
+		st.Push(uid, 0, []Op{acc(fmt.Sprint("a", i))})
 	}
-	st.Push(uid, []Op{{OpID: "d1", Kind: "account", ID: "a1", Action: "delete"},
+	st.Push(uid, 0, []Op{{OpID: "d1", Kind: "account", ID: "a1", Action: "delete"},
 		{OpID: "e1", Kind: "account", ID: "a2", Action: "upsert",
 			Data: json.RawMessage(`{"name":"` + strings.Repeat("é", 30) + `","type":"cash","initial_balance_cents":0,"archived":false}`)}})
 	read := func() (r, b, tt int64) {
@@ -221,14 +221,14 @@ func TestLimiteDiarioDeOps(t *testing.T) {
 	defer func(n int64) { MaxOpsPerDay = n }(MaxOpsPerDay)
 	MaxOpsPerDay = 3
 	st, uid := open(t)
-	res, _ := st.Push(uid, []Op{acc("a1"), acc("a2")})
-	res2, _ := st.Push(uid, []Op{acc("a3"), acc("a4")})
+	res, _ := st.Push(uid, 0, []Op{acc("a1"), acc("a2")})
+	res2, _ := st.Push(uid, 0, []Op{acc("a3"), acc("a4")})
 	if res[0].Status != "ok" || res[1].Status != "ok" || res2[0].Status != "ok" ||
 		res2[1].Status != "rejected" || !strings.Contains(res2[1].Error, "limite diário") {
 		t.Errorf("limite diário: %+v %+v", res, res2)
 	}
 	st.db.Exec(`UPDATE users SET ops_day='2000-01-01'`) // virou o dia
-	if res, _ := st.Push(uid, []Op{acc("a5")}); res[0].Status != "ok" {
+	if res, _ := st.Push(uid, 0, []Op{acc("a5")}); res[0].Status != "ok" {
 		t.Errorf("novo dia deveria zerar: %+v", res[0])
 	}
 }
@@ -273,8 +273,8 @@ func TestMigraBancoAntigoSemUserVersion(t *testing.T) {
 func TestDeleteUserEmCascata(t *testing.T) {
 	st, uid := open(t)
 	b, _ := st.UpsertGoogleUser("sub2", "b@x.com", "B", "", 0)
-	st.Push(uid, []Op{acc("a1")})
-	st.Push(b.ID, []Op{acc("b1")})
+	st.Push(uid, 0, []Op{acc("a1")})
+	st.Push(b.ID, 0, []Op{acc("b1")})
 	st.NewSession(uid, "x", time.Hour)
 	if err := st.DeleteUser(uid); err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func TestDeleteUserEmCascata(t *testing.T) {
 
 func TestResetApagaDadosEPropagaTombstones(t *testing.T) {
 	st, uid := open(t)
-	st.Push(uid, []Op{acc("a1"), acc("a2")})
+	st.Push(uid, 0, []Op{acc("a1"), acc("a2")})
 	_, cur, _, _ := st.Pull(uid, 0, 100)
 	if err := st.Reset(uid); err != nil {
 		t.Fatal(err)
@@ -303,20 +303,20 @@ func TestResetApagaDadosEPropagaTombstones(t *testing.T) {
 	if ex, _ := st.Export(uid); len(ex) != 0 {
 		t.Fatalf("export após reset: %d", len(ex))
 	}
-	if res, _ := st.Push(uid, []Op{acc("a3")}); res[0].Status != "ok" {
+	if res, _ := st.Push(uid, 0, []Op{acc("a3")}); res[0].Status != "ok" {
 		t.Fatalf("conta continua usável: %+v", res)
 	}
 }
 
 func TestAjusteDeSaldoSincroniza(t *testing.T) {
 	st, uid := open(t)
-	st.Push(uid, []Op{acc("a1")})
+	st.Push(uid, 0, []Op{acc("a1")})
 	cat := Op{OpID: "op-c", Kind: "category", ID: "sys-adjust-expense", Action: "upsert",
 		Data: json.RawMessage(`{"name":"Ajuste de saldo","kind":"expense","parent_id":null,"color":"","is_system":true}`)}
 	tx := Op{OpID: "op-t", Kind: "transaction", ID: "t1", Action: "upsert", Data: json.RawMessage(
 		`{"kind":"expense","description":"Ajuste de saldo","amount_cents":100000,"date":"2026-10-30","status":"paid","paid_at":"2026-10-30",` +
 			`"account_id":"a1","category_id":"sys-adjust-expense","is_adjustment":true}`)}
-	res, _ := st.Push(uid, []Op{cat, tx})
+	res, _ := st.Push(uid, 0, []Op{cat, tx})
 	if res[0].Status != "ok" || res[1].Status != "ok" {
 		t.Fatalf("ajuste recusado: %+v", res)
 	}

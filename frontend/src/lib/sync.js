@@ -40,27 +40,31 @@ const take = (ops) => {
 
 // Envia o lote; se o servidor responder 400/413, divide ao meio e tenta de novo (até 1 op).
 // Uma op que sozinha continua dando 400/413 vira "rejected" local, para não travar a fila.
-async function send(ops, g) {
+async function send(ops, g, cursor) {
   try {
-    const { results } = await api.push(ops.map(({ seq, ...op }) => op));
+    // seq e create são marcas locais; o cursor prova ao servidor que esta cópia viu todas as exclusões já descartadas
+    const { results } = await api.push(ops.map(({ seq, create, ...op }) => op), cursor);
     changed(g);
     return results;
   } catch (e) {
     if (!(e instanceof ApiError) || (e.status !== 400 && e.status !== 413)) throw e;
     if (ops.length === 1) return [{ op_id: ops[0].op_id, status: 'rejected', error: e.message }];
     const mid = ops.length >> 1;
-    const first = await send(ops.slice(0, mid), g);
-    return [...first, ...(await send(ops.slice(mid), g))];
+    const first = await send(ops.slice(0, mid), g, cursor);
+    return [...first, ...(await send(ops.slice(mid), g, cursor))];
   }
 }
 
 const labelOf = (op) => op.data?.name ?? op.data?.description ?? '';
 
 async function push(g) {
+  // Lido uma vez por envio: uma recusa zera o cursor GRAVADO (para o pull reler tudo), mas a cópia local continua
+  // tão em dia quanto estava. Mandar esse 0 no lote seguinte faria o servidor recusá-lo como cópia velha demais.
+  const cursor = await db.getMeta('cursor', 0);
   for (;;) {
     const ops = take(await db.nextOps(BATCH));
     if (!ops.length) return;
-    const results = await send(ops, g);
+    const results = await send(ops, g, cursor);
     const byId = new Map(results.map((r) => [r.op_id, r]));
     const done = [], drop = [], rejected = [];
     let reset = false;
@@ -84,8 +88,19 @@ async function push(g) {
 async function pull(g) {
   let since = await db.getMeta('cursor', 0);
   let restored = false;
+  let full = null; // ressincronização completa: junta as páginas e troca a cópia local de uma vez só
   for (;;) {
-    const { changes, cursor, more, rev } = await api.pull(since);
+    let page;
+    try {
+      page = await api.pull(since, !!full);
+    } catch (e) {
+      // 409 resync: o servidor já descartou exclusões que este cursor não viu. Relê tudo desde o zero.
+      if (!e.resync || full) throw e;
+      full = [];
+      since = 0;
+      continue;
+    }
+    const { changes, cursor, more, rev } = page;
     changed(g);
     if (!restored && rev !== undefined && since > rev) {
       await db.requeueAll();
@@ -94,7 +109,10 @@ async function pull(g) {
       restored = true;
       continue;
     }
-    await db.applyChanges(changes, cursor, g);
+    if (full) {
+      for (const c of changes) full.push(c);
+      if (!more) await db.replaceAll(full, cursor, g);
+    } else await db.applyChanges(changes, cursor, g);
     since = cursor;
     if (!more) return restored;
   }
@@ -111,10 +129,21 @@ export function sync() {
       if (!(await session.canSync())) throw new Error('conta não confirmada neste aparelho');
       const g = db.generation();
       emit(await status({ syncing: true }));
-      await push(g);
-      if (await pull(g)) {
+      const round = async () => {
         await push(g);
+        if (await pull(g)) {
+          await push(g);
+          await pull(g);
+        }
+      };
+      try {
+        await round();
+      } catch (e) {
+        if (!e.resync) throw e;
+        // O servidor recusou o push inteiro: esta cópia é mais velha que o GC de tombstones.
+        // Refaz a cópia pelo pull (a fila sobrevive) e só então reenvia.
         await pull(g);
+        await round();
       }
     } catch (e) {
       // status 0 = sem conexão; 401 já foi tratado por api.js (volta ao login)

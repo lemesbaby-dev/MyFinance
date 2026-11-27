@@ -57,9 +57,15 @@ type Change struct {
 	Data    json.RawMessage `json:"data"`
 }
 
+// ErrResync: o cursor do app é anterior ao marco do GC (gc_rev). A cópia local dele pode ter documento cuja
+// exclusão já foi descartada, e um upsert o recriaria: o lote inteiro é recusado até o app refazer a cópia.
+var ErrResync = errors.New("cursor anterior ao marco do GC")
+
 // Push aplica o lote numa única transação. Operação inválida vira "rejected" e não escreve nada;
 // erro de banco aborta o lote inteiro (o app reenvia, e o op_id garante que não duplica).
-func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
+// `cursor` é o do app (o mesmo do pull); é comparado com o marco DENTRO da transação, então um GC
+// concorrente ou já terminou (e o lote é recusado com ErrResync) ou só roda depois do commit.
+func (s *Store) Push(uid string, cursor int64, ops []Op) ([]OpResult, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -73,10 +79,13 @@ func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
 	// Contadores mantidos em users (recountSQL os recalcula): nada de varrer `entities` a cada push.
 	var u usage
 	var day string
-	var opsN int64
-	if err := tx.QueryRow(`SELECT rows_n, bytes_n, total_n, ops_day, ops_n FROM users WHERE id=?`, uid).
-		Scan(&u.rows, &u.bytes, &u.total, &day, &opsN); err != nil {
+	var opsN, gcRev int64
+	if err := tx.QueryRow(`SELECT rows_n, bytes_n, total_n, ops_day, ops_n, gc_rev FROM users WHERE id=?`, uid).
+		Scan(&u.rows, &u.bytes, &u.total, &day, &opsN, &gcRev); err != nil {
 		return nil, err
+	}
+	if cursor < gcRev {
+		return nil, ErrResync // o rollback desfaz a poda de sync_ops acima: nada é escrito
 	}
 	if today := time.Now().UTC().Format("2006-01-02"); day != today {
 		day, opsN = today, 0
@@ -237,6 +246,42 @@ func (s *Store) apply(tx *sql.Tx, uid string, op Op, res OpResult, ex exists, pa
 func (s *Store) Rev(uid string) (rev int64, err error) {
 	err = s.db.QueryRow(`SELECT rev FROM users WHERE id=?`, uid).Scan(&rev)
 	return
+}
+
+// GCRev é o marco do GC: o maior rev de tombstone já descartado do usuário (0 = nunca descartou).
+// Quem tem cursor menor que isso perdeu alguma exclusão e precisa refazer a cópia local inteira.
+func (s *Store) GCRev(uid string) (rev int64, err error) {
+	err = s.db.QueryRow(`SELECT gc_rev FROM users WHERE id=?`, uid).Scan(&rev)
+	return
+}
+
+// GC remove os tombstones excluídos há mais que `retention` e sobe o marco (gc_rev) de cada usuário atingido,
+// tudo numa transação. Linha viva não tem deleted_at e nunca casa com o filtro. Devolve quantas linhas saíram.
+// ponytail: varre `entities` inteira (sem índice em deleted_at); roda 1x por dia e a tabela é pequena.
+func (s *Store) GC(retention time.Duration) (int64, error) {
+	cut := time.Now().UTC().Add(-retention).Format("2006-01-02 15:04:05") // mesmo formato do datetime('now')
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	const old = `e.deleted_at IS NOT NULL AND e.deleted_at < ?`
+	// total_n conta tombstones (teto de 4x a cota): desce junto, senão o teto nunca liberaria.
+	if _, err := tx.Exec(`UPDATE users SET
+		  gc_rev  = MAX(gc_rev, (SELECT MAX(e.rev) FROM entities e WHERE e.user_id=users.id AND `+old+`)),
+		  total_n = total_n - (SELECT COUNT(*) FROM entities e WHERE e.user_id=users.id AND `+old+`)
+		WHERE id IN (SELECT e.user_id FROM entities e WHERE `+old+`)`, cut, cut, cut); err != nil {
+		return 0, err
+	}
+	res, err := tx.Exec(`DELETE FROM entities AS e WHERE `+old, cut)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, tx.Commit()
 }
 
 // Pull devolve as mudanças com rev > since, em ordem. more=true se há mais além do limite.

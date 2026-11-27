@@ -44,14 +44,14 @@ Cliente usa a biblioteca `idb` (wrapper pequeno) ou IndexedDB puro. Sem SQLite-W
 ## Protocolo de sincronização (implementado no M2)
 O servidor guarda **documentos JSON** numa só tabela `entities` (`user_id, kind, id, rev, deleted_at, data`),
 com `kind` ∈ `account | category | recurrence | transaction`. `rev` é um contador **por usuário**
-(cada escrita incrementa) e serve de cursor. Exclusão é lógica (tombstone).
+(cada escrita incrementa) e serve de cursor. Exclusão é lógica (tombstone), apagada de vez depois da retenção (ver "Limpeza de tombstones").
 
 **Pull** — `GET /api/sync?since=<rev>&limit=<n≤1000>` →
 `{ changes: [{kind, id, rev, deleted, data}], cursor, more }`. O app repete enquanto `more=true`.
 
 **Push** — `POST /api/sync` (lote ≤ 500 operações, aplicado numa transação):
 ```json
-{ "ops": [ { "op_id": "uuid", "kind": "transaction", "id": "uuid", "action": "upsert|delete", "data": { … } } ] }
+{ "cursor": 42, "ops": [ { "op_id": "uuid", "kind": "transaction", "id": "uuid", "action": "upsert|delete", "data": { … } } ] }
 ```
 Resposta `{ results: [{op_id, status, error?}] }`, com `status`:
 
@@ -77,6 +77,42 @@ Cota: 50 mil documentos e 20 MB por usuário, 16 KB por documento; os contadores
 e são atualizados dentro do push (recalculáveis: ver `recountSQL` em `store.go`), sem varrer `entities` a cada push.
 `sync_ops` guarda só os últimos 2000 `op_id`s por usuário (e nada com mais de 90 dias). Limite de 20 000 operações por usuário
 por dia (UTC; as que passarem voltam `rejected` "limite diário"). Rate limit: 120 pushes/min e 300 pulls/min por usuário.
+
+**Limpeza de tombstones (GC)**: o próprio servidor apaga, na subida e uma vez por dia, os tombstones excluídos há mais
+que `TOMBSTONE_RETENTION_DAYS` (padrão 180; `0` desliga). Só linhas com `deleted_at` saem; `total_n` desce junto (libera o teto de 4x).
+Cada usuário guarda em `users.gc_rev` o maior `rev` de tombstone já descartado (o **marco**). Um cursor menor que o marco
+perdeu alguma exclusão, então **não** pode ser atendido de forma incremental:
+
+- `GET /api/sync?since=<rev>` com `since < gc_rev` → **409** `{error, resync: true}`. O app relê tudo com
+  `GET /api/sync?since=0&full=1` (mesma resposta e paginação do pull; na última página o `cursor` nunca fica atrás do marco)
+  e **troca a cópia local pelo estado do servidor numa transação só** (`db.replaceAll`), mantendo a fila pendente:
+  item na fila não é sobrescrito e continua valendo; o resto que o servidor não tem é apagado.
+- `POST /api/sync` leva o `cursor` do app; se `cursor < gc_rev` (ou sem `cursor`) → **409** `{error, resync: true}` e nada é
+  aplicado. Sem isso, a edição pendente de um documento excluído e já coletado seria um INSERT (o servidor não tem mais como
+  responder `gone`) e o documento voltaria. O app refaz a cópia pelo pull e só então reenvia a fila.
+- Na troca, um upsert da fila para documento que o servidor não tem e que **não é criação** sai da fila e entra nos recusados
+  ("foi excluído em outro aparelho"), igual ao `gone`. Para saber o que é criação, cada operação da fila leva a marca local
+  `create` (não havia cópia local ao gravar, ou o envio anterior foi recusado); ela não vai no push. Operação enfileirada por
+  versão anterior do app não tem a marca: na dúvida não é enviada **nem** apagada (fica como recusado com a mensagem
+  "não foi enviado; salve de novo para manter", a cópia local é mantida fora dos saldos, e salvar de novo a recria).
+  Regra de recorrência recusada não é regravada sozinha pelo `extendRecurrences` enquanto estiver na lista.
+- O marco é conferido junto da leitura/escrita: no pull ele é lido **depois** da consulta (um GC no meio vira um 409 a mais,
+  nunca um 200 sem a exclusão) e no push é comparado **dentro** da transação do lote.
+- O app lê o cursor uma vez por envio: uma recusa zera o cursor gravado (o pull seguinte relê tudo), mas os lotes seguintes
+  do mesmo envio continuam mandando o cursor com que começaram, para não serem recusados como cópia antiga.
+- Lançamento novo na fila que aponta para conta/recorrência excluída e coletada segue o caminho normal: `rejected`.
+- **App antigo** (sem `full=1` e sem `cursor`): só passa a receber 409 depois que o usuário dele tiver um marco (`gc_rev > 0`).
+  O sync falha com a mensagem do servidor ("Atualize o app: feche e abra de novo."), o cursor não avança e a fila fica intacta até a página recarregar com a versão nova.
+  Por isso o sinal é um erro, e não um campo novo num 200, que o app antigo ignoraria seguindo com dados já excluídos.
+
+⚠️ **Limitações conhecidas do GC**: (1) o tombstone de um documento cuja exclusão chegou enquanto havia edição local na fila é
+pulado pelo pull; se esse aparelho ficar offline até o tombstone ser coletado **e** nenhuma exclusão mais nova for coletada
+depois do cursor dele, a edição recria o documento. (2) O índice único de ocorrências ignora tombstones (antes e depois do GC):
+quem impede uma ocorrência excluída de voltar é o `generated_until` da recorrência. (3) Criação com confirmação perdida:
+o aparelho cria um documento, o servidor aplica, a resposta se perde e o aparelho some por mais que a retenção; nesse meio-tempo
+o documento é excluído em outro aparelho, o tombstone é coletado e o `sync_ops` (90 dias) já esqueceu o `op_id`. Na volta a
+operação continua marcada como `create` (a marca é local e não sabe que o servidor chegou a aplicar), fica na fila e recria o
+documento.
 
 **Referências a categorias** (`category_id`, `parent_id`) para categoria inexistente ou excluída **não** são recusadas:
 o servidor grava `null` ("cura"). `account_id`, `transfer_account_id` e `recurrence_id` inválidos continuam `rejected`.
