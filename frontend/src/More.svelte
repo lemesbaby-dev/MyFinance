@@ -2,6 +2,7 @@
   import { app, dismissRejected } from './lib/app.svelte.js';
   import { sync } from './lib/sync.js';
   import { api } from './lib/api.js';
+  import { toCSV } from './lib/csv.js';
   import { getTheme, getCvd, setTheme, setCvd } from './lib/theme.js';
   import Card from './ui/Card.svelte';
   import Segmented from './ui/Segmented.svelte';
@@ -49,14 +50,20 @@
   let confirmEmail = $state('');
   let dataBusy = $state(false);
 
+  function download(text, type, name) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
+  // Gerado no aparelho a partir da cópia local: funciona offline.
+  const exportCSV = () => download(toCSV(app.transactions, app.accounts, app.categories), 'text/csv;charset=utf-8', 'financas-lancamentos.csv');
+
   async function exportData() {
     dataBusy = true; dataError = '';
     try {
-      const data = await api.exportData();
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-      const a = Object.assign(document.createElement('a'), { href: url, download: 'financas-export.json' });
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      download(JSON.stringify(await api.exportData(), null, 2), 'application/json', 'financas-export.json');
     } catch (e) { dataError = e.message; } finally { dataBusy = false; }
   }
 
@@ -144,7 +151,8 @@
 
 <section class="sec">
   <h2>Seus dados</h2>
-  <p class="muted small">Baixe uma cópia de tudo que está no servidor, recomece com a conta vazia ou apague sua conta de vez. Precisa de internet.</p>
+  <p class="muted small">Baixe seus lançamentos em planilha (CSV), mesmo sem internet. Para baixar uma cópia de tudo que está no servidor, recomeçar com a conta vazia ou apagar sua conta de vez, precisa de internet.</p>
+  <div><Button variant="secondary" onclick={exportCSV}>Exportar lançamentos (CSV)</Button></div>
   <div><Button variant="secondary" onclick={exportData} disabled={dataBusy}>Exportar meus dados</Button></div>
   <div><Button variant="danger" onclick={resetData} disabled={dataBusy}>Começar do zero</Button></div>
   {#if !deleting}
