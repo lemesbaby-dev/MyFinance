@@ -120,7 +120,7 @@
   {:else}
     <Select label="Categoria" bind:value={categoryId} options={catOpts} />
     {#if !editing}
-      <Select label="Repetir" bind:value={repeat} options={REPEATS} />
+      <Select label="Repetir" bind:value={repeat} options={REPEATS} help={repeat !== 'none' ? 'Notas ficam em cada lançamento: para anotar, edite um deles depois de salvar.' : ''} />
       {#if repeat !== 'none'}
         <TextInput label="A cada quantos {UNITS[repeat]}" type="number" min="1" max={MAX_INTERVAL} inputmode="numeric" bind:value={interval} help="1 = {REPEATS.find((r) => r[0] === repeat)[1].toLowerCase()}" error={err('interval')} />
         <DatePicker label="Termina em" bind:value={endDate} clearable placeholder="Sem data final" help="Opcional. O último lançamento é até essa data." error={err('end')} />

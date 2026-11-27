@@ -207,7 +207,7 @@ const RECURRING_FIELDS = ['description', 'amount_cents', 'account_id', 'category
  * Edita um lançamento que veio de uma recorrência.
  *  one       só esta ocorrência (sempre, se ela já foi paga)
  *  all       a regra e as ocorrências pendentes (só os campos compartilhados que mudaram)
- *  following esta e as próximas: a regra antiga termina no dia anterior e nasce uma cópia a partir desta
+ *  following esta e as próximas: a regra antiga termina no dia anterior e as pendentes seguintes passam para uma cópia dela
  * A ocorrência clicada recebe sempre todas as `changes`.
  */
 export const editRecurring = (tx, scope, changes) => serial(async () => {
@@ -218,9 +218,11 @@ export const editRecurring = (tx, scope, changes) => serial(async () => {
   const clicked = (extra) => put('transaction', tx.id, txDoc({ ...base, ...changes, ...extra }));
   if (scope === 'following' && tx.date > rec.start_date) {
     const nid = uuidv7();
-    await addRecurrence({ ...doc(rec), ...shared, generated_until: tx.date }, [
+    // As pendentes seguintes são religadas (não apagadas e regeradas): mantêm id, notas e edições individuais.
+    // Por isso a regra nova herda o `generated_until` (nunca antes da clicada): só gera o que ainda não existia.
+    await addRecurrence({ ...doc(rec), ...shared, generated_until: rec.generated_until > tx.date ? rec.generated_until : tx.date }, [
       put('recurrence', rec.id, { ...doc(rec), end_date: addDays(tx.date, -1) }),
-      ...pendingOf(rec.id).filter((t) => t.date > tx.date && t.id !== tx.id).map((t) => del('transaction', t.id)),
+      ...pendingOf(rec.id).filter((t) => t.date > tx.date && t.id !== tx.id).map((t) => put('transaction', t.id, { ...doc(t), ...shared, recurrence_id: nid })),
       clicked({ recurrence_id: nid }),
     ], nid);
   } else { // 'all' (ou 'following' na primeira ocorrência, que é a regra inteira)

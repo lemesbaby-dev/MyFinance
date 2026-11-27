@@ -154,6 +154,34 @@ test('editRecurring following: corta a regra, mantém a clicada, copia a regra (
   assert.ok(mine.slice(1).every((x) => x.amount_cents === 20000));
 });
 
+test('editRecurring following: religa as pendentes seguintes (mesmo id, notas e edições), sem duplicar nem sumir datas', async () => {
+  const r = await seed();
+  const all = occ(r.id);
+  const [t, paid, noted, gone] = [all[5], all[6], all[7], all[8]];
+  await A.setPaid(paid, true);
+  await A.saveTx(noted.id, { notes: 'nota de março', description: 'Especial' }); // "só este"
+  await A.deleteRecurring(gone, 'one');
+  const datesOf = () => app.transactions.filter((x) => x.recurrence_id).map((x) => x.date).sort();
+  const before = datesOf();
+  await A.editRecurring(app.transactions.find((x) => x.id === t.id), 'following', { amount_cents: 20000, date: t.date, description: 'Aluguel' });
+
+  const nr = app.recurrences.find((x) => x.id !== r.id);
+  const now = app.transactions.find((x) => x.id === noted.id);
+  assert.ok(now, 'a ocorrência seguinte mantém o id');
+  assert.deepEqual([now.notes, now.description, now.amount_cents, now.recurrence_id], ['nota de março', 'Especial', 20000, nr.id]);
+  assert.deepEqual(datesOf(), before, 'nenhuma data duplica, some ou volta depois de excluída');
+  const p = app.transactions.find((x) => x.id === paid.id);
+  assert.deepEqual([p.recurrence_id, p.amount_cents], [r.id, 10000], 'paga continua na regra antiga');
+  assert.equal(rule(r.id).end_date, addDays(t.date, -1));
+  assert.equal(nr.generated_until, r.generated_until, 'regra nova herda o generated_until');
+  for (const id of [r.id, nr.id]) assert.equal(new Set(occ(id).map((x) => x.date)).size, occ(id).length, 'data única por regra');
+
+  const n = await db.pending();
+  await A.extendRecurrences();
+  assert.deepEqual(datesOf(), before, 'estender não regera nada');
+  assert.equal(await db.pending(), n);
+});
+
 test('editRecurring following em ocorrência paga ou na 1ª ocorrência', async () => {
   const r = await seed();
   const all = occ(r.id);
@@ -330,10 +358,11 @@ test('createRecurrence: data final corta as ocorrências; antes do início é re
   const r = app.recurrences[0];
   assert.equal(r.end_date, end);
   assert.deepEqual(occ(r.id).map((t) => t.date), [0, 1, 2].map((k) => addMonths(START, k)));
-  await A.extendRecurrences();
-  assert.equal(occ(r.id).length, 3, 'estender não passa da data final');
   await assert.rejects(A.createRecurrence({ ...base, end_date: addDays(START, -1) }), /data final/);
   assert.equal(app.recurrences.length, 1, 'regra inválida não é gravada');
+  // regra já gerada até a 2ª ocorrência: estender (dentro do seed) cria só a 3ª e para na data final
+  const s = await seed({ end_date: end, generated_until: addMonths(START, 1) });
+  assert.deepEqual(occ(s.id).map((t) => t.date), [addMonths(START, 2)], 'estender não passa da data final');
 });
 
 test('notas: persistem, são preservadas na edição, limpam com vazio e vão em todas as parcelas', async () => {
