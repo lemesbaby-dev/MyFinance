@@ -10,6 +10,8 @@ Tom: **amigo organizado, não banco**. Próximo, calmo, direto. Sem culpa, sem a
 | **pendente** | ainda não efetivado e dentro do prazo | "em aberto", "a vencer" |
 | **atrasado** | pendente com data anterior a hoje (sempre com ícone de relógio) | "vencido", "inadimplente" |
 | **lançamento** | uma receita, despesa ou transferência | "transação", "movimentação" |
+| **repetição** / "Repetições" | conta que se repete (aluguel, salário); a tela é "Repetições", o título "Contas que se repetem" | "recorrência", "regra" |
+| **encerrar** / "Encerrada" | parar uma repetição: saem os pendentes de hoje em diante; atrasados e efetivados ficam | "excluir", "cancelar" (para a repetição) |
 | **Hoje → Previsto** | os dois números do hero | "saldo atual/projetado" |
 | **não enviado** / **recusado** | alteração ainda local / rejeitada pelo servidor | "dessincronizado", "falhou" |
 

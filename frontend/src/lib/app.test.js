@@ -406,3 +406,89 @@ test('extendRecurrences não regrava regra recusada (senão o push a recriaria t
   assert.equal((await db.nextOps(1000)).some((o) => o.id === 'recusada' || o.data?.recurrence_id === 'recusada'), false, 'nada da regra recusada volta para a fila');
   assert.equal((await db.getMeta('rejected')).length, 1, 'e ela continua recusada');
 });
+
+test('endRecurrence: saem só as pendentes de hoje em diante; atrasadas e efetivadas ficam; grava end_date e nada mais é gerado', async () => {
+  const today = todayISO();
+  const r = await seed();
+  const all = occ(r.id);
+  const late = all.filter((t) => t.date < today);
+  const future = all.filter((t) => t.date >= today);
+  assert.ok(late.length > 1 && future.length > 1);
+  await A.setPaid(late[0], true);
+  await A.setPaid(future[1], true); // pago adiantado: também fica
+  await A.endRecurrence(r.id);
+
+  const left = occ(r.id);
+  assert.deepEqual(left.map((t) => t.id), [...late.map((t) => t.id), future[1].id]);
+  assert.deepEqual(left.filter((t) => t.status === 'pending').map((t) => t.id), late.slice(1).map((t) => t.id), 'atrasadas continuam pendentes');
+  assert.deepEqual([rule(r.id).end_date, rule(r.id).active], [addDays(today, -1), false]);
+  await A.extendRecurrences();
+  assert.deepEqual(occ(r.id).map((t) => t.id), left.map((t) => t.id), 'estender não gera nada');
+
+  // mesmo se outro aparelho reativar a regra, a data final segura: nada de hoje em diante
+  const { id, ...d } = rule(r.id);
+  await db.save('recurrence', id, { ...d, active: true, generated_until: null });
+  await A.reload();
+  await A.extendRecurrences();
+  assert.ok(occ(r.id).every((t) => t.date < today || t.id === future[1].id));
+
+  // regra que ainda não começou: a data final não pode ficar antes do início (o servidor recusaria)
+  const start = addDays(today, 10);
+  const f = await seed({ start_date: start });
+  await A.endRecurrence(f.id);
+  assert.equal(occ(f.id).length, 0);
+  assert.deepEqual([rule(f.id).end_date, rule(f.id).active], [start, false]);
+  await A.extendRecurrences();
+  assert.equal(occ(f.id).length, 0);
+
+  // já encerrada: não grava de novo; data final que já existia não é adiada
+  const q = await db.pending();
+  await A.endRecurrence(f.id);
+  assert.equal(await db.pending(), q);
+  const old = addDays(today, -90);
+  const g = await seed({ end_date: old });
+  await A.endRecurrence(g.id);
+  assert.deepEqual([rule(g.id).end_date, rule(g.id).active], [old, false]);
+});
+
+test('editRule: muda só as pendentes a partir da data; anteriores e efetivadas intactas; mesmos ids, notas e datas', async () => {
+  const today = todayISO();
+  const r = await seed();
+  const all = occ(r.id);
+  const i = all.findIndex((t) => t.date >= today);
+  const [first, paid, noted] = [all[i], all[i + 1], all[i + 2]];
+  await A.setPaid(paid, true);
+  await A.saveTx(noted.id, { notes: 'nota', description: 'Especial' });
+  const snap = () => app.transactions.filter((t) => t.recurrence_id).map((t) => [t.id, t.date]).sort();
+  const before = snap();
+  await A.editRule(r.id, first.date, { description: 'Aluguel', amount_cents: 20000, account_id: r.account_id, category_id: null });
+
+  const nr = app.recurrences.find((x) => x.id !== r.id);
+  assert.ok(nr, 'há atrasadas antes da data: a regra é dividida');
+  assert.deepEqual([nr.amount_cents, rule(r.id).amount_cents, rule(r.id).end_date], [20000, 10000, addDays(first.date, -1)]);
+  assert.deepEqual(snap(), before, 'mesmos ids e datas: nada duplica nem some');
+  const get = (id) => app.transactions.find((t) => t.id === id);
+  for (const t of all) {
+    const now = get(t.id);
+    const changed = t.date >= first.date && t.id !== paid.id;
+    assert.deepEqual([now.amount_cents, now.recurrence_id], changed ? [20000, nr.id] : [10000, r.id], t.date);
+  }
+  assert.deepEqual([get(noted.id).notes, get(noted.id).description], ['nota', 'Especial'], 'nota e edição individual preservadas');
+  await A.extendRecurrences();
+  assert.deepEqual(snap(), before, 'estender não regera nada');
+
+  // sem pendente antes da data: não divide (a regra muda e segue com o histórico)
+  const s = await seed({ start_date: addDays(today, 3) });
+  const mine = occ(s.id);
+  await A.editRule(s.id, mine[0].date, { description: 'Novo nome', amount_cents: s.amount_cents, account_id: s.account_id, category_id: null });
+  assert.equal(app.recurrences.length, 3);
+  assert.equal(rule(s.id).description, 'Novo nome');
+  assert.ok(occ(s.id).every((t) => t.description === 'Novo nome'));
+  assert.deepEqual(occ(s.id).map((t) => t.id), mine.map((t) => t.id));
+
+  // nada mudou: não grava; valor inválido: recusa
+  const q = await db.pending();
+  await A.editRule(s.id, mine[0].date, { description: 'Novo nome', amount_cents: s.amount_cents, account_id: s.account_id, category_id: null });
+  assert.equal(await db.pending(), q);
+  await assert.rejects(A.editRule(s.id, mine[0].date, { amount_cents: 0 }), /Valor inválido/);
+});
