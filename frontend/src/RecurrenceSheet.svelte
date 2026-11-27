@@ -1,16 +1,19 @@
 <script>
-  // Detalhe de uma repetição: editar (a partir de uma data) e encerrar. Encerrada é só leitura.
-  import { app, editRule, endRecurrence } from './lib/app.svelte.js';
-  import { recurrenceView, rhythm } from './lib/finance.js';
+  // Detalhe de uma repetição: editar (a partir de uma data), mudar ritmo/dia/data final e encerrar. Encerrada: só "Repetir de novo".
+  import { app, editRule, endRecurrence, scheduleImpact, repeatAgain } from './lib/app.svelte.js';
+  import { recurrenceView, rhythm, nextOccurrence, MAX_INTERVAL } from './lib/finance.js';
   import { fullDate } from './lib/format.js';
   import Sheet from './ui/Sheet.svelte';
   import FormSheet from './ui/FormSheet.svelte';
   import Button from './ui/Button.svelte';
+  import Banner from './ui/Banner.svelte';
+  import Icon from './ui/Icon.svelte';
   import MoneyInput from './ui/MoneyInput.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
   import DatePicker from './ui/DatePicker.svelte';
   import { confirmDialog } from './ui/confirm.js';
+  import { toast } from './ui/toast.js';
 
   let { id, today, onclose } = $props();
 
@@ -28,6 +31,20 @@
   let categoryId = $state(rec?.category_id ?? '');
   /* svelte-ignore state_referenced_locally */
   let from = $state(row?.next ?? row?.pending[0] ?? ''); // padrão: a próxima pendente
+  /* svelte-ignore state_referenced_locally */
+  let frequency = $state(rec?.frequency ?? 'monthly');
+  /* svelte-ignore state_referenced_locally */
+  let interval = $state(rec?.interval_n ?? 1);
+  /* svelte-ignore state_referenced_locally */
+  let endDate = $state(rec?.end_date ?? '');
+  // Próximo vencimento: enquanto ninguém mexe, é a data do ritmo atual a partir de "Mudar a partir de" (ou seja, o dia não muda).
+  let startPick = $state(null);
+  const startDefault = $derived(rec ? nextOccurrence(rec, from || today) ?? (from || today) : '');
+  const start = $derived(startPick ?? startDefault);
+  /* svelte-ignore state_referenced_locally */
+  let again = $state((rec && nextOccurrence(rec, today)) ?? today); // recomeço: a próxima data do ritmo antigo
+  const REPEATS = [['monthly', 'Todo mês'], ['weekly', 'Toda semana'], ['yearly', 'Todo ano'], ['daily', 'Todo dia']];
+  const UNITS = { daily: 'dias', weekly: 'semanas', monthly: 'meses', yearly: 'anos' };
   let error = $state('');
   let errField = $state('');
   let busy = $state(false);
@@ -55,7 +72,25 @@
     error = ''; errField = '';
     if (amount <= 0) { errField = 'amount'; error = 'Informe um valor maior que zero.'; return; }
     if (!description.trim()) { errField = 'description'; error = 'Informe a descrição.'; return; }
-    run(() => editRule(id, from || today, { description: description.trim(), amount_cents: amount, account_id: accountId, category_id: categoryId || null }));
+    if (!(Number.isInteger(+interval) && interval >= 1 && interval <= MAX_INTERVAL)) { errField = 'interval'; error = `Informe um número inteiro de 1 a ${MAX_INTERVAL}.`; return; }
+    const moved = frequency !== rec.frequency || +interval !== rec.interval_n || start !== startDefault;
+    if (endDate && endDate < (moved ? start : rec.start_date)) { errField = 'end'; error = `A data final não pode ser antes ${moved ? 'do próximo lançamento' : 'do início da repetição'}.`; return; }
+    save(from || today, { description: description.trim(), amount_cents: amount, account_id: accountId, category_id: categoryId || null,
+      frequency, interval_n: +interval, start_date: start, end_date: endDate || null });
+  }
+
+  // Mudar as datas tira pendentes: se algum tem anotação ou foi mudado à mão, avisa quantos antes de gravar.
+  async function save(f, changes) {
+    let hit;
+    try { hit = scheduleImpact(id, f, changes); } catch (e) { error = e.message; return; }
+    if (hit?.edited) {
+      const what = hit.rhythm
+        ? n(hit.gone, 'lançamento pendente será trocado por um novo, na data nova', 'lançamentos pendentes serão trocados por novos, nas datas novas')
+        : n(hit.gone, 'lançamento pendente sai, porque fica depois da data final', 'lançamentos pendentes saem, porque ficam depois da data final');
+      const lost = hit.gone === 1 ? 'Ele tem anotação ou foi mudado à mão' : hit.edited === 1 ? '1 deles tem anotação ou foi mudado à mão' : `${hit.edited} deles têm anotação ou foram mudados à mão`;
+      if (!(await confirmDialog({ title: hit.rhythm ? 'Trocar os lançamentos pendentes?' : 'Tirar os lançamentos pendentes?', message: `${what}. ${lost}, e isso se perde.`, danger: true, confirmLabel: hit.rhythm ? 'Trocar' : 'Tirar' }))) return;
+    }
+    run(() => editRule(id, f, changes));
   }
 
   async function end() {
@@ -73,7 +108,10 @@
   <Sheet title={rec.description} {onclose}>
     <p class="note">{facts}</p>
     <p class="note">Repetição encerrada: não gera mais lançamentos. O que já foi efetivado continua no histórico e nos saldos{row.overdue ? ', e o que está atrasado continua na aba Mês' : ''}.</p>
-    <Button variant="secondary" block onclick={onclose}>Fechar</Button>
+    <DatePicker label="Recomeçar em" bind:value={again} help="Cria uma repetição nova com o mesmo valor, conta, categoria e ritmo, a partir dessa data." />
+    {#if error}<Banner tone="danger" icon="alert">{error}</Banner>{/if}
+    <Button variant="secondary" block loading={busy} onclick={() => run(async () => { await repeatAgain(id, again); toast('Repetindo de novo', { tone: 'ok' }); })}><Icon name="refresh" />Repetir de novo</Button>
+    <Button variant="ghost" block onclick={onclose}>Fechar</Button>
   </Sheet>
 {:else if row}
   <FormSheet title="Repetição" {onclose} onsubmit={submit} {busy} error={errField ? '' : error} onremove={end} removeLabel="Encerrar repetição">
@@ -87,7 +125,10 @@
     {:else}
       <p class="note">Não há lançamentos pendentes agora: a mudança vale para os próximos que forem criados.</p>
     {/if}
-    <p class="note">Para mudar o ritmo, o dia ou a data final, encerre esta repetição e crie outra.</p>
+    <Select label="Repete" bind:value={frequency} options={REPEATS} />
+    <TextInput label="A cada quantos {UNITS[frequency]}" type="number" min="1" max={MAX_INTERVAL} inputmode="numeric" bind:value={interval} help="1 = {REPEATS.find((r) => r[0] === frequency)[1].toLowerCase()}" error={err('interval')} />
+    <DatePicker label={rec.kind === 'income' ? 'Próximo recebimento' : 'Próximo vencimento'} bind:value={() => start, (v) => (startPick = v)} help="Mude a data para trocar o dia: os seguintes acompanham." />
+    <DatePicker label="Termina em" bind:value={endDate} clearable placeholder="Sem data final" help="Opcional. O último lançamento é até essa data." error={err('end')} />
   </FormSheet>
 {/if}
 
