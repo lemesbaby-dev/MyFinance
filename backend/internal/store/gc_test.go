@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -31,9 +32,9 @@ func TestGCRespeitaRetencaoEIsolamento(t *testing.T) {
 	u3, _ := st.UpsertGoogleUser("sub3", "c@x.com", "C", "", 0)
 	bia, caio := u2.ID, u3.ID
 
-	st.Push(ana, []Op{acc("viva"), acc("velha"), acc("recente"), del("velha"), del("recente")}) // revs 1..5
-	st.Push(bia, []Op{acc("b-velha"), del("b-velha"), acc("b-viva")})                           // revs 1..3
-	st.Push(caio, []Op{acc("c-viva"), acc("c-recente"), del("c-recente")})
+	st.Push(ana, 0, []Op{acc("viva"), acc("velha"), acc("recente"), del("velha"), del("recente")}) // revs 1..5
+	st.Push(bia, 0, []Op{acc("b-velha"), del("b-velha"), acc("b-viva")})                           // revs 1..3
+	st.Push(caio, 0, []Op{acc("c-viva"), acc("c-recente"), del("c-recente")})
 	age(t, st, "velha", 181)
 	age(t, st, "recente", 179)
 	age(t, st, "b-velha", 400)
@@ -85,7 +86,7 @@ func TestGCRespeitaRetencaoEIsolamento(t *testing.T) {
 		t.Errorf("gc_rev recuou: %d", got)
 	}
 	// idempotência do push continua: o mesmo op_id não reaplica
-	if res, _ := st.Push(ana, []Op{acc("viva"), del("velha")}); res[0].Status != "dup" || res[1].Status != "dup" {
+	if res, _ := st.Push(ana, 5, []Op{acc("viva"), del("velha")}); res[0].Status != "dup" || res[1].Status != "dup" {
 		t.Errorf("reenvio após GC: %+v", res)
 	}
 }
@@ -95,15 +96,15 @@ func TestGCLiberaOTetoDeTombstones(t *testing.T) {
 	MaxRows = 1 // teto total = 4 linhas, vivas ou não
 	st, uid := open(t)
 	for i := 0; i < 4; i++ {
-		st.Push(uid, []Op{acc(fmt.Sprint("a", i)), del(fmt.Sprint("a", i))})
+		st.Push(uid, 0, []Op{acc(fmt.Sprint("a", i)), del(fmt.Sprint("a", i))})
 	}
-	if res, _ := st.Push(uid, []Op{acc("nova")}); res[0].Status != "rejected" {
+	if res, _ := st.Push(uid, 0, []Op{acc("nova")}); res[0].Status != "rejected" {
 		t.Fatalf("teto deveria recusar: %+v", res[0])
 	}
 	if n, err := st.GC(-time.Hour); err != nil || n != 4 { // retenção negativa: todo tombstone é "antigo"
 		t.Fatalf("GC = %d, %v", n, err)
 	}
-	if res, _ := st.Push(uid, []Op{acc("nova")}); res[0].Status != "ok" {
+	if res, _ := st.Push(uid, 8, []Op{acc("nova")}); res[0].Status != "ok" {
 		t.Errorf("após o GC deveria caber: %+v", res[0])
 	}
 }
@@ -148,5 +149,46 @@ func TestMigraBancoV2ComDados(t *testing.T) {
 	}
 	if gc, _ := st.GCRev("u1"); gc != 3 || count(t, st, `SELECT COUNT(*) FROM entities WHERE id='a1'`) != 1 {
 		t.Errorf("gc_rev = %d ou linha viva sumiu", gc)
+	}
+}
+
+// GC parcial: o segundo descarta um tombstone de rev MENOR que o marco. O marco não recua
+// (quem já passou dele não pode voltar a ser tratado como em dia com um cursor mais baixo).
+func TestGCParcialNaoRecuaOMarco(t *testing.T) {
+	st, uid := open(t)
+	st.Push(uid, 0, []Op{acc("a"), acc("b"), del("a"), del("b")}) // tombstones: a=rev 3, b=rev 4
+	age(t, st, "b", 181)
+	if n, err := st.GC(retention); err != nil || n != 1 {
+		t.Fatalf("1º GC = %d, %v", n, err)
+	}
+	if got, _ := st.GCRev(uid); got != 4 {
+		t.Fatalf("gc_rev = %d, quero 4", got)
+	}
+	age(t, st, "a", 181)
+	if n, err := st.GC(retention); err != nil || n != 1 {
+		t.Fatalf("2º GC = %d, %v", n, err)
+	}
+	if got, _ := st.GCRev(uid); got != 4 {
+		t.Errorf("gc_rev recuou para %d, quero 4", got)
+	}
+}
+
+// O marco é comparado dentro da transação do push: cursor anterior a ele não escreve nada.
+func TestPushComCursorAnteriorAoMarco(t *testing.T) {
+	st, uid := open(t)
+	st.Push(uid, 0, []Op{acc("a"), del("a")}) // tombstone no rev 2
+	if _, err := st.GC(-time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	for _, cursor := range []int64{-1, 0, 1} {
+		if res, err := st.Push(uid, cursor, []Op{acc("a2")}); !errors.Is(err, ErrResync) || res != nil {
+			t.Errorf("cursor %d: %v, %v; quero ErrResync", cursor, res, err)
+		}
+	}
+	if got := count(t, st, `SELECT COUNT(*) FROM entities`) + count(t, st, `SELECT COUNT(*) FROM sync_ops WHERE op_id='op-a2'`); got != 0 {
+		t.Errorf("push recusado escreveu: %d linhas", got)
+	}
+	if res, err := st.Push(uid, 2, []Op{acc("a2")}); err != nil || res[0].Status != "ok" { // no marco: em dia
+		t.Errorf("cursor no marco: %+v, %v", res, err)
 	}
 }

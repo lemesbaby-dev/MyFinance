@@ -57,9 +57,15 @@ type Change struct {
 	Data    json.RawMessage `json:"data"`
 }
 
+// ErrResync: o cursor do app é anterior ao marco do GC (gc_rev). A cópia local dele pode ter documento cuja
+// exclusão já foi descartada, e um upsert o recriaria: o lote inteiro é recusado até o app refazer a cópia.
+var ErrResync = errors.New("cursor anterior ao marco do GC")
+
 // Push aplica o lote numa única transação. Operação inválida vira "rejected" e não escreve nada;
 // erro de banco aborta o lote inteiro (o app reenvia, e o op_id garante que não duplica).
-func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
+// `cursor` é o do app (o mesmo do pull); é comparado com o marco DENTRO da transação, então um GC
+// concorrente ou já terminou (e o lote é recusado com ErrResync) ou só roda depois do commit.
+func (s *Store) Push(uid string, cursor int64, ops []Op) ([]OpResult, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -73,10 +79,13 @@ func (s *Store) Push(uid string, ops []Op) ([]OpResult, error) {
 	// Contadores mantidos em users (recountSQL os recalcula): nada de varrer `entities` a cada push.
 	var u usage
 	var day string
-	var opsN int64
-	if err := tx.QueryRow(`SELECT rows_n, bytes_n, total_n, ops_day, ops_n FROM users WHERE id=?`, uid).
-		Scan(&u.rows, &u.bytes, &u.total, &day, &opsN); err != nil {
+	var opsN, gcRev int64
+	if err := tx.QueryRow(`SELECT rows_n, bytes_n, total_n, ops_day, ops_n, gc_rev FROM users WHERE id=?`, uid).
+		Scan(&u.rows, &u.bytes, &u.total, &day, &opsN, &gcRev); err != nil {
 		return nil, err
+	}
+	if cursor < gcRev {
+		return nil, ErrResync // o rollback desfaz a poda de sync_ops acima: nada é escrito
 	}
 	if today := time.Now().UTC().Format("2006-01-02"); day != today {
 		day, opsN = today, 0

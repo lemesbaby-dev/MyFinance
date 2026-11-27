@@ -285,7 +285,14 @@ func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 	if limit < 1 || limit > 1000 {
 		limit = 1000
 	}
-	// O marco é lido ANTES do pull: tudo o que o GC descartou até aqui tem rev <= gcRev.
+	ch, cursor, more, err := s.Store.Pull(userFrom(r).ID, since, limit)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	// O marco é lido DEPOIS do pull: se o GC rodou no meio e descartou um tombstone que a leitura acima já não
+	// entregou, o marco lido aqui já subiu e a resposta vira 409 (no pior caso, uma ressincronização a mais).
+	// Lido antes, o app receberia um 200 sem a exclusão e avançaria o cursor para além do marco.
 	gcRev, err := s.Store.GCRev(userFrom(r).ID)
 	if err != nil {
 		writeStoreErr(w, err)
@@ -297,14 +304,10 @@ func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 		writeResync(w)
 		return
 	}
-	ch, cursor, more, err := s.Store.Pull(userFrom(r).ID, since, limit)
 	if !more && cursor < gcRev {
 		cursor = gcRev // fim da leitura completa: o app já tem tudo até o marco, mesmo sem documento com esse rev
 	}
-	rev := int64(0)
-	if err == nil {
-		rev, err = s.Store.Rev(userFrom(r).ID)
-	}
+	rev, err := s.Store.Rev(userFrom(r).ID)
 	respond(w, map[string]any{"changes": ch, "cursor": cursor, "more": more, "rev": rev}, err)
 }
 
@@ -328,17 +331,13 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Cópia local anterior ao marco do GC pode editar documento cuja exclusão já foi descartada (e o upsert o
-	// recriaria): nada é aplicado até o app refazer a cópia pelo pull.
-	gcRev, err := s.Store.GCRev(u.ID)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	if in.Cursor < gcRev {
+	// recriaria): o store compara o cursor com o marco dentro da transação e nada é aplicado até o app refazer
+	// a cópia pelo pull.
+	res, err := s.Store.Push(u.ID, in.Cursor, in.Ops)
+	if errors.Is(err, store.ErrResync) {
 		writeResync(w)
 		return
 	}
-	res, err := s.Store.Push(u.ID, in.Ops)
 	respond(w, map[string]any{"results": res}, err)
 }
 
@@ -418,9 +417,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // writeResync: a cópia local do app é mais velha que o GC de tombstones. 409 (e não um campo novo num 200) para
 // o app antigo, que ignoraria o campo, parar em erro em vez de seguir com dados já excluídos.
+// O app atual trata o 409 sozinho; quem lê a mensagem é o app antigo (que não manda cursor e recebe 409 mesmo
+// em dia) ou o atual quando a segunda tentativa também falha. Nos dois casos a saída é a mesma, e no PWA
+// instalado não há botão de recarregar: fechar e abrir.
 func writeResync(w http.ResponseWriter) {
-	writeJSON(w, 409, map[string]any{"resync": true,
-		"error": "este aparelho ficou muito tempo sem sincronizar; recarregue o app para atualizar os dados"})
+	writeJSON(w, 409, map[string]any{"resync": true, "error": "Atualize o app: feche e abra de novo."})
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {

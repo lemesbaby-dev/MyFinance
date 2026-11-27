@@ -108,3 +108,33 @@ func TestSyncGCIsoladoPorUsuario(t *testing.T) {
 		t.Errorf("pull da Ana: %d %v", code, o)
 	}
 }
+
+// O GC roda no meio de um pull incremental: a resposta ou traz o tombstone ou pede ressincronização.
+// Nunca um 200 sem ele (o app avançaria o cursor para além do marco e ficaria com o documento para sempre).
+func TestSyncPullConcorrenteComGCNaoPerdeExclusao(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < 100; i++ {
+		id := fmt.Sprint("acc", i)
+		code, o, _ := e.do("POST", "/api/sync", "", m{"cursor": 2 * i,
+			"ops": []m{upsert("account", id, account("A")), op("account", id, "delete", nil)}}) // tombstone no rev 2i+2
+		if code != 200 {
+			t.Fatalf("push %d: %d %v", i, code, o)
+		}
+		done := make(chan error, 1)
+		go func() {
+			time.Sleep(time.Duration(i%20) * 20 * time.Microsecond) // espalha o instante do GC pela requisição
+			_, err := e.st.GC(-time.Hour)
+			done <- err
+		}()
+		code, o, _ = e.do("GET", fmt.Sprintf("/api/sync?since=%d", 2*i+1), "", nil)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if code == 409 {
+			continue
+		}
+		if ch, _ := o["changes"].([]any); code != 200 || len(ch) != 1 || ch[0].(map[string]any)["deleted"] != true {
+			t.Fatalf("iteração %d: %d %v; quero o tombstone ou 409", i, code, o)
+		}
+	}
+}
