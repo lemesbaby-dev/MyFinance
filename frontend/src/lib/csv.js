@@ -9,7 +9,7 @@ const cell = (v) => {
   return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 };
 
-/** centavos (inteiro) -> "1234,56", sem float; despesa sai negativa para a coluna somar certo. */
+/** centavos (inteiro) -> "1234,56", sem float; despesa sai negativa. Transferência sai positiva: somar a coluna sem filtrar por Tipo não dá o saldo. */
 const amount = (t) => {
   const c = Math.abs(t.amount_cents ?? 0);
   const s = String(c).padStart(3, '0');
@@ -28,8 +28,8 @@ export function toCSV(transactions, accounts, categories) {
     cell(acc(t.account_id)),
     cell(acc(t.transfer_account_id)),
     cell(cat(t.category_id)),
-    t.installment_total ? `${t.installment_no}/${t.installment_total}` : '',
+    t.installment_total ? `${t.installment_no} de ${t.installment_total}` : '',
     cell(t.notes),
   ].join(';'));
-  return '﻿' + ['Data;Descrição;Tipo;Valor;Situação;Conta;Conta de destino;Categoria;Parcela;Notas', ...rows].join('\r\n') + '\r\n';
+  return '\uFEFF' + ['Data;Descrição;Tipo;Valor;Situação;Conta;Conta de destino;Categoria;Parcela;Notas', ...rows].join('\r\n') + '\r\n';
 }

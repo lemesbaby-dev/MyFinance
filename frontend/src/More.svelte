@@ -57,8 +57,8 @@
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
-  // Gerado no aparelho a partir da cópia local: funciona offline.
-  const exportCSV = () => download(toCSV(app.transactions, app.accounts, app.categories), 'text/csv;charset=utf-8', 'financas-lancamentos.csv');
+  // Gerado no aparelho a partir da cópia local: funciona offline. Recusados pelo servidor ficam de fora, como nos saldos.
+  const exportCSV = () => download(toCSV(app.transactions.filter((t) => !app.rejectedIds.has(t.id)), app.accounts, app.categories), 'text/csv;charset=utf-8', 'financas-lancamentos.csv');
 
   async function exportData() {
     dataBusy = true; dataError = '';
