@@ -90,7 +90,8 @@ export async function init(user) {
   // Pede armazenamento persistente: sem isso o navegador pode apagar o IndexedDB em falta de espaço (e o Safari após ~7 dias).
   navigator.storage?.persist?.().then((p) => (app.persisted = p)).catch(() => {});
   await reload();
-  await extendRecurrences();
+  // Não estende as recorrências aqui: a cópia local pode estar atrás do servidor, e regravar uma regra que outro
+  // aparelho encerrou a reabriria (issue #29). Quem estende é o onStatus, depois da 1ª sincronização.
   app.status = await sync.status();
   if (!started) {
     started = true;
@@ -103,10 +104,11 @@ function listen() {
   sync.onStatus(async (s) => {
     app.status = s;
     await reload();
-    if (s.syncing === false && s.ok) { // ok = push e pull completos (offline não conta)
-      if (!app.synced) { app.synced = true; await db.setMeta('synced', true); }
-      await extendRecurrences(); // chegaram recorrências de outro aparelho
-    }
+    if (s.syncing !== false) return;
+    if (s.ok && !app.synced) { app.synced = true; await db.setMeta('synced', true); } // ok = push e pull completos (offline não conta)
+    // Estende só depois do pull (chegaram regras, e encerramentos, de outro aparelho). Sem rede estende assim mesmo,
+    // para o app seguir utilizável: o servidor não deixa a cópia antiga reabrir a regra (docs/02, "cópia antiga").
+    if (s.ok || s.offline) await extendRecurrences();
   });
   sync.startAutoSync();
 }

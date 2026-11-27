@@ -60,7 +60,7 @@ Resposta `{ results: [{op_id, status, error?}] }`, com `status`:
 | `ok` | aplicada | tira da fila |
 | `dup` | `op_id` já aplicado (reenvio após queda de rede) | tira da fila |
 | `gone` | item já excluído (exclusão vence edição) | tira da fila; o pull traz o tombstone; **aparece na lista de recusados** ("foi excluído em outro aparelho") |
-| `conflict` | INSERT de ocorrência de recorrência duplicada (outro aparelho já gerou o mesmo dia) | descarta a cópia local |
+| `conflict` | INSERT de ocorrência de recorrência duplicada (outro aparelho já gerou o mesmo dia), ou gerada por cópia antiga além do encerramento da regra (ver "Regra de recorrência escrita por cópia antiga") | descarta a cópia local |
 | `rejected` | inválida (`error`) — formato, referências, cota, limite diário, ou UPDATE que colidiria com outra ocorrência da recorrência | registra para a interface mostrar: contador na barra de status e na aba Mais; o item fica marcado "não enviado" e **fora dos saldos** até ser descartado ou corrigido (salvar de novo) |
 
 Só `ok` entra em `sync_ops` (reenviar uma recusada devolve o mesmo status). `delete` de id desconhecido é no-op `ok`.
@@ -71,6 +71,29 @@ se o cursor do app for maior, o servidor foi restaurado de backup e o app reenfi
 ⚠️ **Limitação conhecida**: não há detecção de conflito por `base_rev`. Se dois aparelhos editam o mesmo documento
 offline, a edição que chegar por último substitui a outra por inteiro (todos os campos do documento, não só o que mudou).
 `pay/unpay` é um upsert do lançamento inteiro (`status` + `paid_at`).
+
+**Regra de recorrência escrita por cópia antiga** (issue #29). Um aparelho que fica semanas sem abrir estende as
+recorrências com a regra que tem: regrava o documento inteiro, sem o encerramento que outro aparelho fez, e gera ocorrências nela.
+Duas camadas impedem que isso desfaça o encerramento e duplique lançamentos:
+
+- **App**: `init` não estende mais as recorrências; quem estende é o `onStatus`, depois de uma sincronização completa
+  (o pull já trouxe o encerramento). Se a sincronização falhar por falta de rede, estende assim mesmo, para o app seguir utilizável.
+- **Servidor**: o `cursor` do push diz até onde o app leu. Se a regra tem `rev` maior que o cursor (o app não viu a versão gravada;
+  app antigo sem `cursor` vale 0), o upsert dela continua sendo o último documento, **menos** o que reabriria a regra:
+  `end_date` não é tirado nem adiado, `active` não volta a `true` e `generated_until` não recua (vale o mais restritivo, sem recusar,
+  para nada virar "recusado" no aparelho antigo). Se o início novo ficar depois do fim gravado, o documento gravado é mantido.
+  Nessa mesma situação, INSERT de lançamento **pendente** com data depois do `end_date` da regra (ou depois do `generated_until`
+  de uma regra desativada) volta `conflict` e o app descarta a cópia local. Efetivado e lançamento que já existe nunca são barrados.
+  A decisão vale por lote e é tomada no 1º contato com a regra: as escritas do próprio lote não contam como "outro aparelho".
+- Quem está em dia (cursor ≥ `rev` da regra) grava o que quiser: tirar ou adiar a data final e reativar continuam valendo.
+
+⚠️ **Limitações**: (1) o cursor é por app, não por documento. Duas edições da mesma regra que caiam em lotes diferentes do mesmo
+envio (fila com mais de 200 operações, ou resposta perdida e reenvio) fazem a segunda ser tratada como cópia antiga: ela não reabre
+a regra, o pull devolve o valor mais restritivo e o usuário refaz. Resolve com o `base_rev` por operação (issue #26).
+(2) Lançamento pendente que a cópia antiga gerou além do encerramento **e** o usuário editou offline sem efetivar é descartado junto.
+(3) Servidor restaurado de backup: o app reenvia tudo com cursor 0, então a regra fica com o encerramento mais restritivo entre o
+backup e o aparelho, e um pendente que o usuário moveu para depois do fim da regra não é recriado.
+(4) App novo contra servidor antigo (rollback): só a camada do app vale; a extensão feita offline segue sem proteção, como antes.
 
 **Isolamento e limites**: toda leitura/escrita filtra por `user_id`; ids e `op_id` valem por usuário.
 Cota: 50 mil documentos e 20 MB por usuário, 16 KB por documento; os contadores (`rows_n`, `bytes_n`, `total_n`) ficam em `users`
@@ -136,8 +159,9 @@ Falha de rede ⇒ a operação continua na outbox; nada se perde. (M2: ao abrir,
   (12 meses à frente), ligados por `recurrence_id`.
 - Índice único `(recurrence_id, date)` no servidor com `ON CONFLICT DO NOTHING` impede duplicata
   se dois aparelhos materializarem a mesma janela.
-- **Janela rolante**: ao abrir o app, o cliente estende as ocorrências até hoje + 12 meses
-  (substitui o job de 24 h do servidor). Se ninguém abre o app, ninguém precisa dos lançamentos.
+- **Janela rolante**: depois de cada sincronização completa (ou ao abrir sem rede), o cliente estende as ocorrências
+  até hoje + 12 meses (substitui o job de 24 h do servidor). Se ninguém abre o app, ninguém precisa dos lançamentos.
+  Nunca antes do 1º pull: ver "Regra de recorrência escrita por cópia antiga".
 - Parcelas: N lançamentos com o mesmo `installment_group`, gerados no cliente.
 
 ## Mudança em relação ao esqueleto

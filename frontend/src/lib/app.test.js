@@ -17,8 +17,10 @@ const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = (f, ms, ...a) => (ms === 1500 ? 0 : realSetTimeout(f, ms, ...a));
 let online = false;
 let pullRev = 0;
+let srv = null; // servidor falso com estado (testes de dois aparelhos); null = respostas fixas
 globalThis.fetch = async (url, init) => {
   if (!online) throw new TypeError('offline');
+  if (srv) return { ok: true, status: 200, json: async () => srv.handle(url, init) };
   const body = init.method === 'POST'
     ? { results: JSON.parse(init.body).ops.map((o) => ({ op_id: o.op_id, status: 'ok' })) }
     : { changes: [], cursor: 0, more: false, rev: pullRev };
@@ -37,7 +39,8 @@ const db = await import('./db.js');
 const sync = await import('./sync.js');
 const A = await import(pathToFileURL(join(dir, 'app.svelte.mjs')).href);
 const { app } = A;
-const { addMonths, addDays, horizon, todayISO } = await import('./finance.js');
+const { addMonths, addDays, horizon, todayISO, materialize } = await import('./finance.js');
+const { uuidv7 } = await import('./uuid.js');
 
 beforeEach(async () => {
   await A.idle();
@@ -45,6 +48,7 @@ beforeEach(async () => {
   globalThis.indexedDB = new IDBFactory();
   A.clearApp();
   online = false;
+  srv = null;
 });
 
 const Y = new Date().getFullYear();
@@ -405,6 +409,172 @@ test('extendRecurrences não regrava regra recusada (senão o push a recriaria t
   assert.equal(occ('recusada').length, 0);
   assert.equal((await db.nextOps(1000)).some((o) => o.id === 'recusada' || o.data?.recurrence_id === 'recusada'), false, 'nada da regra recusada volta para a fila');
   assert.equal((await db.getMeta('rejected')).length, 1, 'e ela continua recusada');
+});
+
+// ---------- issue #29: aparelho com cópia antiga não desfaz o encerramento de uma regra ----------
+
+// Servidor falso com estado: documento inteiro (o último vence), rev crescente, tombstone e o índice único de ocorrências.
+// `protect` liga as duas regras do servidor real para regra que mudou depois do cursor do push (store/sync.go):
+// a regra não é reaberta e ocorrência pendente nova além do encerramento volta `conflict`. Sem ela é o servidor antigo.
+function fakeServer(protect) {
+  const s = { rev: 0, rows: new Map(), ops: [] };
+  const row = (kind, id) => s.rows.get(kind + '/' + id);
+  s.put = (kind, id, data) => s.rows.set(kind + '/' + id, { kind, id, rev: ++s.rev, deleted: false, data });
+  s.del = (kind, id) => s.rows.set(kind + '/' + id, { kind, id, rev: ++s.rev, deleted: true, data: {} });
+  s.live = (kind) => [...s.rows.values()].filter((r) => r.kind === kind && !r.deleted).map((r) => ({ id: r.id, ...r.data })).sort((a, b) => a.id.localeCompare(b.id));
+  s.handle = (url, init) => {
+    if (init.method !== 'POST') {
+      const since = Number(new URL(url, 'http://x').searchParams.get('since'));
+      const changes = [...s.rows.values()].filter((r) => r.rev > since).sort((a, b) => a.rev - b.rev);
+      return { changes, cursor: changes.at(-1)?.rev ?? since, more: false, rev: s.rev };
+    }
+    const { ops, cursor = 0 } = JSON.parse(init.body);
+    const verdict = new Map(); // decidido no 1º contato do lote com a regra: o próprio lote não a "atualiza"
+    const stale = (id, rev) => protect && (verdict.has(id) ? verdict : verdict.set(id, rev > cursor)).get(id);
+    const min = (a, b) => (a && b ? (a < b ? a : b) : a ?? b);
+    return { results: ops.map((op) => {
+      s.ops.push(op);
+      const res = (status) => ({ op_id: op.op_id, status });
+      const old = row(op.kind, op.id);
+      if (op.action === 'delete') return (old && !old.deleted && s.del(op.kind, op.id), res('ok'));
+      if (old?.deleted) return res('gone');
+      let data = op.data;
+      if (op.kind === 'recurrence' && stale(op.id, old?.rev ?? 0) && old) {
+        const c = old.data;
+        data = { ...data, end_date: min(c.end_date, data.end_date), active: c.active && data.active,
+          generated_until: [c.generated_until ?? '', data.generated_until ?? ''].sort()[1] || null };
+      }
+      if (op.kind === 'transaction' && !old && data.recurrence_id) {
+        const r = row('recurrence', data.recurrence_id);
+        const c = r.data;
+        if (data.status === 'pending' && stale(r.id, r.rev) && ((c.end_date && data.date > c.end_date) || (!c.active && c.generated_until && data.date > c.generated_until))) return res('conflict');
+        if (s.live('transaction').some((t) => t.recurrence_id === data.recurrence_id && t.date === data.date)) return res('conflict');
+      }
+      s.put(op.kind, op.id, data);
+      return res('ok');
+    }) };
+  };
+  return s;
+}
+
+const RULE = { kind: 'expense', description: 'Aluguel', amount_cents: 10000, account_id: 'acc', category_id: null,
+  frequency: 'monthly', interval_n: 1, start_date: START, end_date: null, active: true, generated_until: null };
+const plain = (list) => JSON.parse(JSON.stringify([...list].sort((a, b) => a.id.localeCompare(b.id))));
+// algumas rodadas de sincronização, esperando o que o onStatus dispara (recarga e extensão das recorrências)
+async function settle() {
+  for (let i = 0; i < 4; i++) {
+    await sync.sync();
+    await new Promise((r) => realSetTimeout(r, 20));
+    await A.idle();
+  }
+}
+
+/**
+ * Dois aparelhos. B (este app) sincronizou pela última vez há 2 meses: a cópia local dele é o servidor daquele dia.
+ * Depois A, no servidor, encerrou a regra r1:
+ *  following  "excluir esta e as próximas": r1 ganha end_date e as pendentes seguintes saem
+ *  all        "excluir todas": r1 fica active:false e todas as pendentes saem
+ *  split      "editar esta e as próximas": r1 ganha end_date e as pendentes seguintes passam para a regra nova r2,
+ *             que já gerou até o horizonte de hoje (as mesmas datas que a cópia antiga de B geraria em r1)
+ */
+async function twoDevices(protect, ending) {
+  srv = fakeServer(protect);
+  const today = todayISO();
+  const genOld = addMonths(today, 10); // horizonte de B na última abertura
+  srv.put('account', 'acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0, archived: false });
+  const m = materialize({ ...RULE, id: 'r1' }, genOld, uuidv7);
+  const r1 = { ...RULE, generated_until: m.generated_until };
+  srv.put('recurrence', 'r1', r1);
+  m.txs.forEach((t) => srv.put('transaction', t.id, t.data));
+  srv.put('transaction', m.txs[0].id, { ...m.txs[0].data, status: 'paid', paid_at: m.txs[0].data.date }); // efetivada
+  srv.put('transaction', m.txs[1].id, { ...m.txs[1].data, amount_cents: 12345, notes: 'combinado' }); // editada, atrasada
+  await db.ensureUser('u1');
+  await db.applyChanges([...srv.rows.values()], srv.rev);
+
+  const end = addDays(today, -40);
+  const after = srv.live('transaction').filter((t) => t.status === 'pending' && (ending === 'all' || t.date > end));
+  if (ending === 'all') srv.put('recurrence', 'r1', { ...r1, active: false });
+  else srv.put('recurrence', 'r1', { ...r1, end_date: end });
+  if (ending === 'split') {
+    const more = materialize({ ...RULE, id: 'r2', amount_cents: 20000, generated_until: genOld }, horizon(today), uuidv7);
+    assert.ok(more.txs.length > 0, 'r2 tem datas além do horizonte antigo de B');
+    srv.put('recurrence', 'r2', { ...RULE, amount_cents: 20000, generated_until: more.generated_until });
+    after.forEach(({ id, ...t }) => srv.put('transaction', id, { ...t, amount_cents: 20000, recurrence_id: 'r2' }));
+    more.txs.forEach((t) => srv.put('transaction', t.id, t.data));
+  } else after.forEach((t) => srv.del('transaction', t.id));
+  return { genOld, end, txs: srv.live('transaction'), recs: srv.live('recurrence') };
+}
+
+const noDuplicates = () => {
+  const seen = new Set();
+  for (const t of app.transactions.filter((x) => x.recurrence_id && x.status === 'pending')) {
+    assert.equal(seen.has(t.date), false, `duas ocorrências pendentes em ${t.date}`);
+    seen.add(t.date);
+  }
+};
+
+for (const ending of ['following', 'all', 'split']) {
+  test(`#29 com rede (${ending}): a cópia antiga não estende antes do 1º pull; o encerramento feito em outro aparelho fica`, async () => {
+    const was = await twoDevices(false, ending); // servidor antigo, sem proteção: a correção é só do app
+    online = true;
+    await A.init({ id: 'u1', email: 'a@x.com' });
+    await settle();
+    assert.deepEqual(srv.ops, [], 'B não enviou nada: a regra chegou encerrada antes de qualquer extensão');
+    assert.deepEqual(srv.live('recurrence'), was.recs, 'regra intacta no servidor');
+    assert.deepEqual(srv.live('transaction'), was.txs, 'lançamentos intactos no servidor');
+    assert.deepEqual(plain(app.recurrences), was.recs);
+    assert.deepEqual(plain(app.transactions), was.txs);
+    noDuplicates();
+  });
+
+  test(`#29 sem rede (${ending}): B estende offline e sincroniza depois; o servidor mantém o encerramento e não sobram duplicatas`, async () => {
+    const was = await twoDevices(true, ending);
+    await A.init({ id: 'u1', email: 'a@x.com' });
+    await settle(); // offline: o app abre e estende com a cópia que tem
+    const extra = occ('r1').filter((t) => t.date > was.genOld);
+    assert.ok(extra.length > 0, 'offline o app segue estendendo');
+    await A.setPaid(extra[0], true); // o usuário efetivou uma das ocorrências que B gerou
+
+    online = true;
+    await settle();
+    assert.equal(await db.pending(), 0);
+    assert.deepEqual(plain(app.rejected), [], 'nada vira "recusado" no aparelho antigo');
+    const r1 = srv.live('recurrence')[0];
+    assert.deepEqual([r1.end_date, r1.active], [was.recs[0].end_date, was.recs[0].active], 'o encerramento não foi desfeito');
+    const paid = { ...extra[0], status: 'paid', paid_at: todayISO() };
+    assert.deepEqual(srv.live('transaction'), plain([...was.txs, paid]), 'só a efetivada entrou; o que A deixou (efetivada, editada, religadas) não mudou');
+    assert.deepEqual(plain(app.transactions), srv.live('transaction'), 'a cópia local ficou igual ao servidor');
+    assert.deepEqual(plain(app.recurrences), srv.live('recurrence'));
+    noDuplicates();
+    const n = srv.ops.length;
+    await settle();
+    assert.equal(srv.ops.length, n, 'sem laço: nada é reenviado depois');
+  });
+}
+
+test('#29 um aparelho só: criar, encerrar e reabrir a regra seguem valendo com a proteção do servidor', async () => {
+  srv = fakeServer(true);
+  online = true;
+  await A.init({ id: 'u1', email: 'a@x.com' });
+  await A.saveAccount('acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  await A.createRecurrence({ ...RULE });
+  await settle();
+  const rec = app.recurrences[0];
+  assert.equal(rec.generated_until, horizon(todayISO()));
+  assert.equal(srv.live('transaction').length, occ(rec.id).length);
+
+  const cut = occ(rec.id).find((t) => t.date > todayISO());
+  await A.deleteRecurring(cut, 'following');
+  await settle();
+  assert.equal(srv.live('recurrence')[0].end_date, addDays(cut.date, -1));
+
+  const { id, ...data } = rule(rec.id);
+  await sync.save('recurrence', id, { ...data, end_date: null }); // aparelho em dia tira a data final (issue #33)
+  await settle();
+  assert.equal(srv.live('recurrence')[0].end_date, null, 'edição de quem está em dia não é barrada');
+  assert.deepEqual(plain(app.rejected), []);
+  assert.deepEqual(plain(app.transactions), srv.live('transaction'));
+  noDuplicates();
 });
 
 test('endRecurrence: saem só as pendentes de hoje em diante; atrasadas e efetivadas ficam; grava end_date e nada mais é gerado', async () => {
