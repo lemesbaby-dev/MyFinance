@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { money, parseMoney } from './format.js';
 import {
   addMonths, addDays, occurrences, splitInstallments, balances, monthView, materialize, horizon, shiftMonth, monthEnd,
-  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment,
+  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment, filterTxs,
 } from './finance.js';
 
 const nbsp = (s) => s.replace(/ /g, ' ');
@@ -141,6 +141,50 @@ test('filtro Todos soma pagos e pendentes; transferência fica fora dos totais',
   assert.equal(v.expense_cents, 150000 + 30000 + 12000 + 2500);
   assert.equal(v.result_cents, v.income_cents - v.expense_cents);
   assert.ok(v.rows.some((r) => r.kind === 'transfer'), 'transferência aparece na lista');
+});
+
+// ---- busca e filtros da aba Mês ----
+const ftx = [
+  { id: 'f1', kind: 'expense', description: 'Pão de Açúcar', notes: '', account_id: 'a', transfer_account_id: null, category_id: 'sub' },
+  { id: 'f2', kind: 'expense', description: 'Farmácia', notes: 'remédio da MÃE', account_id: 'b', transfer_account_id: null, category_id: 'pai' },
+  { id: 'f3', kind: 'transfer', description: 'Reserva', notes: '', account_id: 'a', transfer_account_id: 'b', category_id: null },
+  { id: 'f4', kind: 'income', description: 'Salário', account_id: 'c', transfer_account_id: null, category_id: 'outra' },
+];
+const fcats = [{ id: 'pai', parent_id: null }, { id: 'sub', parent_id: 'pai' }, { id: 'outra', parent_id: null }];
+const fids = (f) => filterTxs(ftx, f, fcats).map((t) => t.id);
+
+test('filterTxs: sem filtro devolve a própria lista', () => {
+  assert.equal(filterTxs(ftx, {}, fcats), ftx);
+  assert.equal(filterTxs(ftx, { q: '   ' }, fcats), ftx);
+});
+
+test('filterTxs: busca ignora maiúsculas e acentos, em descrição e notas', () => {
+  assert.deepEqual(fids({ q: 'pao de acucar' }), ['f1']);
+  assert.deepEqual(fids({ q: 'AÇÚCAR' }), ['f1']);
+  assert.deepEqual(fids({ q: 'mae' }), ['f2']);
+  assert.deepEqual(fids({ q: ' salario ' }), ['f4']); // lançamento sem `notes` não quebra
+  assert.deepEqual(fids({ q: 'xyz' }), []);
+});
+
+test('filterTxs: conta inclui transferência que sai ou entra nela', () => {
+  assert.deepEqual(fids({ accountId: 'a' }), ['f1', 'f3']);
+  assert.deepEqual(fids({ accountId: 'b' }), ['f2', 'f3']);
+  assert.deepEqual(fids({ accountId: 'c' }), ['f4']);
+});
+
+test('filterTxs: categoria pai inclui subcategorias; subcategoria não puxa o pai', () => {
+  assert.deepEqual(fids({ categoryId: 'pai' }), ['f1', 'f2']);
+  assert.deepEqual(fids({ categoryId: 'sub' }), ['f1']);
+});
+
+test('filterTxs: filtros combinam (E) e alimentam o monthView', () => {
+  assert.deepEqual(fids({ accountId: 'a', categoryId: 'pai' }), ['f1']);
+  assert.deepEqual(fids({ q: 'reserva', accountId: 'b' }), ['f3']);
+  assert.deepEqual(fids({ q: 'farm', accountId: 'a' }), []);
+  const v = monthView(filterTxs(mtx, { categoryId: 'c1' }), month, 'all', today);
+  assert.ok(v.rows.length > 0 && v.rows.every((r) => r.category_id === 'c1'));
+  assert.ok(v.spending.every((s) => s.category_id === 'c1'));
+  assert.equal(v.income_cents, 0);
 });
 
 test('monthView ignora lançamentos de conta arquivada', () => {

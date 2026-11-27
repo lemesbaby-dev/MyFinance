@@ -259,3 +259,21 @@ export function monthView(allTxs, month, filter, today, archived = new Set(), ex
   const spending = [...spend].map(([category_id, cents]) => ({ category_id: category_id || null, cents })).sort((a, b) => b.cents - a.cents);
   return { rows, overdue, income_cents: income, expense_cents: expense, result_cents: income - expense, spending };
 }
+
+const fold = (s) => (s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/**
+ * Busca e filtros da aba Mês, aplicados à lista ANTES de `monthView` (que segue cuidando de mês, situação e totais).
+ * `q`: texto procurado em descrição e notas, sem diferenciar maiúsculas nem acentos.
+ * `accountId`: a conta do lançamento; em transferência vale a de origem ou a de destino.
+ * `categoryId`: a categoria ou qualquer subcategoria dela (`categories` dá o `parent_id`).
+ */
+export function filterTxs(txs, { q = '', accountId = '', categoryId = '' } = {}, categories = []) {
+  const needle = fold(q).trim();
+  if (!needle && !accountId && !categoryId) return txs;
+  const cats = new Set([categoryId, ...categories.filter((c) => c.parent_id === categoryId).map((c) => c.id)]);
+  return txs.filter((t) =>
+    (!accountId || t.account_id === accountId || t.transfer_account_id === accountId) &&
+    (!categoryId || cats.has(t.category_id)) &&
+    (!needle || fold(t.description).includes(needle) || fold(t.notes).includes(needle)));
+}
