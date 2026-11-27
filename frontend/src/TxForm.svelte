@@ -10,8 +10,8 @@
   import DatePicker from './ui/DatePicker.svelte';
   import Switch from './ui/Switch.svelte';
 
-  // tx = lançamento existente (edição); sem tx = novo.
-  let { tx = null, onclose } = $props();
+  // tx = lançamento existente (edição); sem tx = novo. repeating: o novo já abre repetindo (subaba Repetições).
+  let { tx = null, onclose, repeating = false } = $props();
 
   const editing = $derived(!!tx);
   const recurring = $derived(!!tx?.recurrence_id);
@@ -31,7 +31,8 @@
   let categoryId = $state(tx?.category_id ?? '');
   /* svelte-ignore state_referenced_locally */
   let done = $state(tx?.status === 'paid');
-  let repeat = $state('none'); // none | daily | weekly | monthly | yearly
+  /* svelte-ignore state_referenced_locally */
+  let repeat = $state(repeating ? 'monthly' : 'none'); // none | daily | weekly | monthly | yearly
   let installments = $state(1);
   let interval = $state(1); // repete a cada N dias/semanas/meses/anos
   let endDate = $state(''); // fim opcional da repetição

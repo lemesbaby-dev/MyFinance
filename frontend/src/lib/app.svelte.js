@@ -210,11 +210,13 @@ const RECURRING_FIELDS = ['description', 'amount_cents', 'account_id', 'category
  *  following esta e as próximas: a regra antiga termina no dia anterior e as pendentes seguintes passam para uma cópia dela
  * A ocorrência clicada recebe sempre todas as `changes`.
  */
-export const editRecurring = (tx, scope, changes) => serial(async () => {
+export const editRecurring = (tx, scope, changes) => serial(() => editOccurrence(tx, scope, changes));
+// `ruleChanges`: campos compartilhados já decididos por quem chama (editRule compara com a regra, não com a ocorrência).
+async function editOccurrence(tx, scope, changes, ruleChanges) {
   const rec = app.recurrences.find((r) => r.id === tx.recurrence_id);
   if (scope === 'one' || !rec || tx.status === 'paid') return saveTx(tx.id, changes);
   const base = doc(app.transactions.find((t) => t.id === tx.id) ?? tx);
-  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (tx[k] ?? null)).map((k) => [k, changes[k]]));
+  const shared = ruleChanges ?? Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (tx[k] ?? null)).map((k) => [k, changes[k]]));
   const clicked = (extra) => put('transaction', tx.id, txDoc({ ...base, ...changes, ...extra }));
   if (scope === 'following' && tx.date > rec.start_date) {
     const nid = uuidv7();
@@ -233,6 +235,40 @@ export const editRecurring = (tx, scope, changes) => serial(async () => {
     }
     await sync.saveMany(items);
   }
+  await reload();
+}
+
+/**
+ * Edita pela regra (tela de Repetições): mudam a regra e as pendentes com data >= `from`; as anteriores e as efetivadas não.
+ * Reaproveita editRecurring: `all` se não há pendente antes de `from`, senão `following` a partir da primeira pendente dali.
+ */
+export const editRule = (id, from, changes) => serial(async () => {
+  const rec = app.recurrences.find((r) => r.id === id);
+  if (!rec) return;
+  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (rec[k] ?? null)).map((k) => [k, changes[k]]));
+  if (!Object.keys(shared).length) return;
+  checkTx(shared.amount_cents ?? rec.amount_cents, rec.start_date);
+  const mine = pendingOf(id).sort((a, b) => a.date.localeCompare(b.date));
+  const tx = mine.find((t) => t.date >= from);
+  if (tx) return editOccurrence(tx, tx === mine[0] ? 'all' : 'following', shared, shared);
+  await sync.save('recurrence', id, { ...doc(rec), ...shared }); // nada pendente dali em diante: vale para o que ainda for gerado
+  await reload();
+});
+
+/**
+ * Encerra a repetição: saem as pendentes de hoje em diante; as atrasadas (data < hoje) e as efetivadas ficam.
+ * Grava `end_date` (ontem; nunca antes do início, que o servidor recusa, nem depois de uma data final que já existia)
+ * e desativa: nada mais é gerado. Já encerrada e sem nada a tirar: não grava de novo.
+ */
+export const endRecurrence = (id) => serial(async () => {
+  const rec = app.recurrences.find((r) => r.id === id);
+  if (!rec) return;
+  const today = todayISO();
+  const last = addDays(today, -1);
+  const end = [rec.start_date, rec.end_date && rec.end_date < last ? rec.end_date : last].sort().at(-1);
+  const gone = pendingOf(id).filter((t) => t.date >= today).map((t) => del('transaction', t.id));
+  if (!gone.length && !rec.active && rec.end_date === end) return;
+  await sync.saveMany([...gone, put('recurrence', id, { ...doc(rec), active: false, end_date: end })]);
   await reload();
 });
 

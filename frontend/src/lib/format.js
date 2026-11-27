@@ -16,3 +16,6 @@ export function parseMoney(input) {
 
 /** "2026-10-30" -> "30/10" */
 export const shortDate = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+
+/** "2026-10-30" -> "30/10/2026" */
+export const fullDate = (iso) => iso.split('-').reverse().join('/');

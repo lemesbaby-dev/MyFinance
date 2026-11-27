@@ -277,3 +277,49 @@ export function filterTxs(txs, { q = '', accountId = '', categoryId = '' } = {},
     (!categoryId || cats.has(t.category_id)) &&
     (!needle || fold(t.description).includes(needle) || fold(t.notes).includes(needle)));
 }
+
+// ---------- repetições (tela) ----------
+
+const WEEKDAYS = ['aos domingos', 'às segundas', 'às terças', 'às quartas', 'às quintas', 'às sextas', 'aos sábados'];
+
+/** Ritmo da regra em linguagem de leigo: "Todo mês, dia 5", "A cada 2 semanas, às segundas". */
+export function rhythm(r) {
+  const { y, m, d } = parseISO(r.start_date);
+  const [one, many, when] = {
+    daily: ['Todo dia', 'dias', ''],
+    weekly: ['Toda semana', 'semanas', WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]],
+    monthly: ['Todo mês', 'meses', `dia ${d}`],
+    yearly: ['Todo ano', 'anos', `em ${pad(d)}/${pad(m)}`],
+  }[r.frequency];
+  return (r.interval_n === 1 ? one : `A cada ${r.interval_n} ${many}`) + (when && `, ${when}`);
+}
+
+/**
+ * Visão da tela de Repetições, a partir das regras e dos lançamentos ligados a elas.
+ * rows: { rec, paid, pending (datas pendentes em ordem), overdue (quantas são < hoje), next (próxima de hoje em diante), ended },
+ *   ordenadas pelo que vence antes (atrasado primeiro).
+ * ended: regra desativada, com data final no passado, ou com data final e nada mais por vir.
+ * income_cents/expense_cents: pendentes de repetições nos 30 dias a partir de hoje (hoje a hoje + 29).
+ *   Ficam fora os ids recusados (`excluded`) e os lançamentos de conta arquivada (`archived`), como na aba Mês.
+ */
+export function recurrenceView(recs, txs, today, excluded = new Set(), archived = new Set()) {
+  const until = addDays(today, 30);
+  const by = new Map(recs.map((rec) => [rec.id, { rec, paid: 0, pending: [] }]));
+  const sum = { income: 0, expense: 0 };
+  for (const t of txs) {
+    const row = by.get(t.recurrence_id);
+    if (!row) continue;
+    if (t.status === 'paid') { row.paid++; continue; }
+    row.pending.push(t.date);
+    if (t.date >= today && t.date < until && t.kind in sum && !excluded.has(t.id) && !archived.has(t.account_id)) sum[t.kind] += t.amount_cents;
+  }
+  const rows = [...by.values()].map((row) => {
+    const { rec, pending } = row;
+    pending.sort();
+    const overdue = pending.filter((d) => d < today).length;
+    const next = pending[overdue] ?? null;
+    const ended = !rec.active || (!!rec.end_date && (rec.end_date < today || (!next && (rec.generated_until ?? '') >= rec.end_date)));
+    return { ...row, overdue, next, ended };
+  }).sort((a, b) => (a.pending[0] ?? '9').localeCompare(b.pending[0] ?? '9') || a.rec.description.localeCompare(b.rec.description, 'pt-BR'));
+  return { rows, income_cents: sum.income, expense_cents: sum.expense };
+}
