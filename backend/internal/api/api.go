@@ -274,7 +274,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	respond(w, map[string]bool{"ok": true}, s.Store.RevokeSession(bearer(r)))
 }
 
-// GET /api/sync?since=<rev>&limit=<n> -> {changes, cursor, more, rev}
+// GET /api/sync?since=<rev>&limit=<n>[&full=1] -> {changes, cursor, more, rev} | 409 {error, resync:true}
 func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 	if !s.limiter.allow("p:"+userFrom(r).ID, 300) {
 		writeErr(w, 429, "muitas requisições; aguarde um minuto")
@@ -285,7 +285,22 @@ func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 	if limit < 1 || limit > 1000 {
 		limit = 1000
 	}
+	// O marco é lido ANTES do pull: tudo o que o GC descartou até aqui tem rev <= gcRev.
+	gcRev, err := s.Store.GCRev(userFrom(r).ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	// Cursor anterior ao marco: faltaria alguma exclusão na resposta incremental. O app refaz a cópia com full=1
+	// (leitura completa desde 0, paginada pelo mesmo cursor); app antigo só vê o erro e não avança o cursor.
+	if since < gcRev && r.URL.Query().Get("full") != "1" {
+		writeResync(w)
+		return
+	}
 	ch, cursor, more, err := s.Store.Pull(userFrom(r).ID, since, limit)
+	if !more && cursor < gcRev {
+		cursor = gcRev // fim da leitura completa: o app já tem tudo até o marco, mesmo sem documento com esse rev
+	}
 	rev := int64(0)
 	if err == nil {
 		rev, err = s.Store.Rev(userFrom(r).ID)
@@ -293,7 +308,7 @@ func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
 	respond(w, map[string]any{"changes": ch, "cursor": cursor, "more": more, "rev": rev}, err)
 }
 
-// POST /api/sync {ops:[...]} -> {results:[...]}
+// POST /api/sync {ops:[...], cursor} -> {results:[...]} | 409 {error, resync:true}
 func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	if !s.limiter.allow("u:"+u.ID, 120) {
@@ -302,12 +317,25 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		Ops []store.Op `json:"ops"`
+		// Cursor do app (o mesmo do pull). App antigo não manda: vale 0.
+		Cursor int64 `json:"cursor"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
 	if len(in.Ops) > store.MaxOps {
 		writeErr(w, 400, "lote grande demais (máximo 500 operações)")
+		return
+	}
+	// Cópia local anterior ao marco do GC pode editar documento cuja exclusão já foi descartada (e o upsert o
+	// recriaria): nada é aplicado até o app refazer a cópia pelo pull.
+	gcRev, err := s.Store.GCRev(u.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if in.Cursor < gcRev {
+		writeResync(w)
 		return
 	}
 	res, err := s.Store.Push(u.ID, in.Ops)
@@ -386,6 +414,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeResync: a cópia local do app é mais velha que o GC de tombstones. 409 (e não um campo novo num 200) para
+// o app antigo, que ignoraria o campo, parar em erro em vez de seguir com dados já excluídos.
+func writeResync(w http.ResponseWriter) {
+	writeJSON(w, 409, map[string]any{"resync": true,
+		"error": "este aparelho ficou muito tempo sem sincronizar; recarregue o app para atualizar os dados"})
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {

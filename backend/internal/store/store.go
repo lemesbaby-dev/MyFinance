@@ -23,6 +23,9 @@ var migrations = []string{
 	 ALTER TABLE users ADD COLUMN total_n INTEGER NOT NULL DEFAULT 0;
 	 ALTER TABLE users ADD COLUMN ops_day TEXT    NOT NULL DEFAULT '';
 	 ALTER TABLE users ADD COLUMN ops_n   INTEGER NOT NULL DEFAULT 0;` + recountSQL,
+	// v3: marco do GC de tombstones (ver GC em sync.go). Cursor menor que gc_rev não pode ser atendido de forma
+	// incremental: algum tombstone que ele ainda não viu já foi descartado.
+	`ALTER TABLE users ADD COLUMN gc_rev INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // recountSQL: rows_n = vivos, bytes_n = bytes dos vivos, total_n = com tombstones.
