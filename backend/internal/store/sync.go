@@ -38,7 +38,8 @@ type Op struct {
 //	ok        aplicada
 //	dup       op_id já aplicado antes (reenvio) — nada a fazer
 //	gone      o item foi excluído (exclusão vence edição); o próximo pull traz o tombstone
-//	conflict  ocorrência de recorrência duplicada num INSERT (outro aparelho já gerou); o app descarta a cópia local
+//	conflict  ocorrência de recorrência duplicada num INSERT (outro aparelho já gerou), ou gerada por cópia antiga
+//	          além do encerramento da regra (ver staleRule); o app descarta a cópia local
 //	rejected  inválida (ver Error); o app avisa o usuário
 //
 // Só operações "ok" entram em sync_ops: reenviar uma recusada devolve o mesmo status e o app descobre.
@@ -103,6 +104,18 @@ func (s *Store) Push(uid string, cursor int64, ops []Op) ([]OpResult, error) {
 		}
 		return &p.String
 	}
+	// stale: a regra mudou depois do cursor deste app, então o que ele manda sobre ela parte de uma cópia antiga
+	// (ver staleRule). Decidido no 1º contato do lote com a regra: as escritas do próprio lote sobem o rev dela
+	// e não podem nem "atualizar" uma cópia antiga nem envelhecer quem estava em dia. Regra criada no lote tem rev 0.
+	seen := map[string]bool{}
+	stale := func(id string, rev int64) bool {
+		v, ok := seen[id]
+		if !ok {
+			v = rev > cursor
+			seen[id] = v
+		}
+		return v
+	}
 	nextRev := func() (int64, error) {
 		var r int64
 		err := tx.QueryRow(`UPDATE users SET rev=rev+1 WHERE id=? RETURNING rev`, uid).Scan(&r)
@@ -129,7 +142,7 @@ func (s *Store) Push(uid string, cursor int64, ops []Op) ([]OpResult, error) {
 		case tx.QueryRow(`SELECT 1 FROM sync_ops WHERE user_id=? AND op_id=?`, uid, op.OpID).Scan(&seen) == nil:
 			res.Status = "dup"
 		default:
-			res, err = s.apply(tx, uid, op, res, ex, parentOf, nextRev, &u)
+			res, err = s.apply(tx, uid, op, res, ex, parentOf, nextRev, stale, &u)
 			if err != nil {
 				return nil, err
 			}
@@ -160,12 +173,58 @@ type usage struct{ rows, bytes, total int64 }
 var refKinds = map[string]string{"account_id": "account", "transfer_account_id": "account",
 	"category_id": "category", "parent_id": "category", "recurrence_id": "recurrence"}
 
+// staleRule: escrita de regra de recorrência por um app que ainda não leu a versão gravada (issue #29: o aparelho
+// abre depois de semanas e estende as recorrências com a cópia antiga, antes do pull). O documento continua sendo
+// o último que chega, menos o que desfaria um encerramento feito em outro aparelho: `end_date` não é tirado nem
+// adiado, `active` não volta a true e `generated_until` não recua. Devolve nil quando não há como conciliar
+// (o início novo fica depois do fim gravado): fica o documento que já estava.
+// Quem está em dia (cursor >= rev da regra) grava o que quiser, inclusive reabrir.
+// ponytail: o cursor é por app, não por documento; duas edições da mesma regra em lotes diferentes do mesmo envio
+// caem aqui e a segunda não reabre. Resolve com o base_rev por operação (issue #26).
+func staleRule(old string, norm json.RawMessage) json.RawMessage {
+	var cur, in recurrenceData
+	if json.Unmarshal([]byte(old), &cur) != nil || json.Unmarshal(norm, &in) != nil {
+		return norm
+	}
+	if cur.EndDate != nil && (in.EndDate == nil || *in.EndDate > *cur.EndDate) {
+		in.EndDate = cur.EndDate
+	}
+	in.Active = in.Active && cur.Active
+	if cur.GeneratedUntil != nil && (in.GeneratedUntil == nil || *in.GeneratedUntil < *cur.GeneratedUntil) {
+		in.GeneratedUntil = cur.GeneratedUntil
+	}
+	if in.EndDate != nil && *in.EndDate < in.StartDate {
+		return nil
+	}
+	out, _ := json.Marshal(in)
+	return out
+}
+
+// pastEnd: lançamento novo e pendente que uma cópia antiga gerou além do encerramento da regra (depois de `end_date`,
+// ou depois do `generated_until` de uma regra desativada, que não gera mais nada). Aceitá-lo duplicaria as datas
+// que a regra nova (ou nenhuma) cobre. Efetivado nunca cai aqui: o usuário mexeu nele.
+func pastEnd(tx *sql.Tx, uid string, norm json.RawMessage, stale func(string, int64) bool) bool {
+	var t transactionData
+	if json.Unmarshal(norm, &t) != nil || t.RecurrenceID == nil || t.Status != "pending" {
+		return false
+	}
+	var rev int64
+	var data string
+	var r recurrenceData
+	if tx.QueryRow(`SELECT rev, data FROM entities WHERE user_id=? AND kind='recurrence' AND id=? AND deleted_at IS NULL`,
+		uid, *t.RecurrenceID).Scan(&rev, &data) != nil || !stale(*t.RecurrenceID, rev) || json.Unmarshal([]byte(data), &r) != nil {
+		return false
+	}
+	return (r.EndDate != nil && t.Date > *r.EndDate) || (!r.Active && r.GeneratedUntil != nil && t.Date > *r.GeneratedUntil)
+}
+
 func (s *Store) apply(tx *sql.Tx, uid string, op Op, res OpResult, ex exists, parentOf func(string) *string,
-	nextRev func() (int64, error), u *usage) (OpResult, error) {
+	nextRev func() (int64, error), stale func(string, int64) bool, u *usage) (OpResult, error) {
 	var deleted bool
 	var old string
-	err := tx.QueryRow(`SELECT deleted_at IS NOT NULL, data FROM entities WHERE user_id=? AND kind=? AND id=?`,
-		uid, op.Kind, op.ID).Scan(&deleted, &old)
+	var oldRev int64 // 0 se o documento não existe
+	err := tx.QueryRow(`SELECT deleted_at IS NOT NULL, data, rev FROM entities WHERE user_id=? AND kind=? AND id=?`,
+		uid, op.Kind, op.ID).Scan(&deleted, &old, &oldRev)
 	found := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return res, err
@@ -207,6 +266,15 @@ func (s *Store) apply(tx *sql.Tx, uid string, op Op, res OpResult, ex exists, pa
 	norm, verr := validateData(op.Kind, op.ID, op.Data, ex, parentOf)
 	if verr != nil {
 		res.Status, res.Error = "rejected", verr.Error()
+		return res, nil
+	}
+	switch {
+	case op.Kind == "recurrence" && stale(op.ID, oldRev) && found:
+		if norm = staleRule(old, norm); norm == nil {
+			return res, nil
+		}
+	case op.Kind == "transaction" && !found && pastEnd(tx, uid, norm, stale):
+		res.Status = "conflict"
 		return res, nil
 	}
 	newLen := int64(len(norm))

@@ -39,7 +39,18 @@ func expense(acc string, extra m) m {
 // push envia o lote e devolve os status por operação.
 func (e *env) push(tok string, ops ...m) []string {
 	e.t.Helper()
-	code, o, _ := e.do("POST", "/api/sync", tok, m{"ops": ops})
+	return e.pushBody(tok, m{"ops": ops})
+}
+
+// pushAt envia o lote com o cursor do app (até onde ele já leu no pull).
+func (e *env) pushAt(cursor int64, ops ...m) []string {
+	e.t.Helper()
+	return e.pushBody("", m{"ops": ops, "cursor": cursor})
+}
+
+func (e *env) pushBody(tok string, body m) []string {
+	e.t.Helper()
+	code, o, _ := e.do("POST", "/api/sync", tok, body)
 	if code != 200 {
 		e.t.Fatalf("push: %d %v", code, o)
 	}
