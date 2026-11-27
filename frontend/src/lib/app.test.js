@@ -154,6 +154,34 @@ test('editRecurring following: corta a regra, mantém a clicada, copia a regra (
   assert.ok(mine.slice(1).every((x) => x.amount_cents === 20000));
 });
 
+test('editRecurring following: religa as pendentes seguintes (mesmo id, notas e edições), sem duplicar nem sumir datas', async () => {
+  const r = await seed();
+  const all = occ(r.id);
+  const [t, paid, noted, gone] = [all[5], all[6], all[7], all[8]];
+  await A.setPaid(paid, true);
+  await A.saveTx(noted.id, { notes: 'nota de março', description: 'Especial' }); // "só este"
+  await A.deleteRecurring(gone, 'one');
+  const datesOf = () => app.transactions.filter((x) => x.recurrence_id).map((x) => x.date).sort();
+  const before = datesOf();
+  await A.editRecurring(app.transactions.find((x) => x.id === t.id), 'following', { amount_cents: 20000, date: t.date, description: 'Aluguel' });
+
+  const nr = app.recurrences.find((x) => x.id !== r.id);
+  const now = app.transactions.find((x) => x.id === noted.id);
+  assert.ok(now, 'a ocorrência seguinte mantém o id');
+  assert.deepEqual([now.notes, now.description, now.amount_cents, now.recurrence_id], ['nota de março', 'Especial', 20000, nr.id]);
+  assert.deepEqual(datesOf(), before, 'nenhuma data duplica, some ou volta depois de excluída');
+  const p = app.transactions.find((x) => x.id === paid.id);
+  assert.deepEqual([p.recurrence_id, p.amount_cents], [r.id, 10000], 'paga continua na regra antiga');
+  assert.equal(rule(r.id).end_date, addDays(t.date, -1));
+  assert.equal(nr.generated_until, r.generated_until, 'regra nova herda o generated_until');
+  for (const id of [r.id, nr.id]) assert.equal(new Set(occ(id).map((x) => x.date)).size, occ(id).length, 'data única por regra');
+
+  const n = await db.pending();
+  await A.extendRecurrences();
+  assert.deepEqual(datesOf(), before, 'estender não regera nada');
+  assert.equal(await db.pending(), n);
+});
+
 test('editRecurring following em ocorrência paga ou na 1ª ocorrência', async () => {
   const r = await seed();
   const all = occ(r.id);
@@ -312,4 +340,139 @@ test('adjustAccount: lança despesa efetivada, cria a categoria de sistema uma v
   assert.equal(app.categories.filter((c) => c.is_system).length, 2);
   await A.deleteTx(t);
   await assert.rejects(A.deleteCategory(A.adjustCategoryId('expense')));
+});
+
+test('createRecurrence: intervalo 2 pula um mês sim, um não', async () => {
+  await A.saveAccount(null, { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  await A.createRecurrence({ kind: 'expense', description: 'Bimestral', amount_cents: 5000, account_id: app.accounts[0].id, frequency: 'monthly', interval_n: 2, start_date: START });
+  const r = app.recurrences[0];
+  assert.equal(r.interval_n, 2);
+  assert.deepEqual(occ(r.id).slice(0, 4).map((t) => t.date), [0, 2, 4, 6].map((k) => addMonths(START, k)));
+});
+
+test('createRecurrence: data final corta as ocorrências; antes do início é recusada', async () => {
+  await A.saveAccount(null, { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  const base = { kind: 'expense', description: 'Curso', amount_cents: 5000, account_id: app.accounts[0].id, frequency: 'monthly', start_date: START };
+  const end = addDays(addMonths(START, 3), -1); // véspera da 4ª ocorrência
+  await A.createRecurrence({ ...base, end_date: end });
+  const r = app.recurrences[0];
+  assert.equal(r.end_date, end);
+  assert.deepEqual(occ(r.id).map((t) => t.date), [0, 1, 2].map((k) => addMonths(START, k)));
+  await assert.rejects(A.createRecurrence({ ...base, end_date: addDays(START, -1) }), /data final/);
+  assert.equal(app.recurrences.length, 1, 'regra inválida não é gravada');
+  // regra já gerada até a 2ª ocorrência: estender (dentro do seed) cria só a 3ª e para na data final
+  const s = await seed({ end_date: end, generated_until: addMonths(START, 1) });
+  assert.deepEqual(occ(s.id).map((t) => t.date), [addMonths(START, 2)], 'estender não passa da data final');
+});
+
+test('notas: persistem, são preservadas na edição, limpam com vazio e vão em todas as parcelas', async () => {
+  await A.saveAccount('acc', { name: 'Conta', type: 'checking', initial_balance_cents: 0 });
+  const base = { kind: 'expense', description: 'Mercado', amount_cents: 100, date: START, account_id: 'acc' };
+  await A.saveTx(null, { ...base, notes: 'nota fiscal 123' });
+  const id = app.transactions[0].id;
+  assert.equal(app.transactions[0].notes, 'nota fiscal 123');
+  await A.saveTx(id, { amount_cents: 200 }); // edição sem o campo: preserva
+  assert.equal(app.transactions[0].notes, 'nota fiscal 123');
+  await A.saveTx(id, { notes: '' }); // limpar
+  assert.equal(app.transactions[0].notes, '');
+  await A.createInstallments({ ...base, description: 'TV', notes: 'garantia até 2030' }, 3);
+  const parts = app.transactions.filter((t) => t.installment_group);
+  assert.deepEqual(parts.map((t) => t.notes), Array(3).fill('garantia até 2030'));
+});
+
+test('notas em ocorrência de recorrência valem só para ela, mesmo editando "todos"', async () => {
+  const r = await seed();
+  const t = occ(r.id).find((x) => x.date > todayISO());
+  await A.editRecurring(t, 'all', { description: 'Aluguel novo', notes: 'reajuste', date: t.date });
+  const all = occ(r.id);
+  assert.equal(all.find((x) => x.id === t.id).notes, 'reajuste');
+  assert.equal(all.filter((x) => x.notes).length, 1);
+  assert.equal(rule(r.id).description, 'Aluguel novo');
+  assert.ok(!('notes' in rule(r.id)), 'regra não ganha campo novo');
+});
+
+test('endRecurrence: saem só as pendentes de hoje em diante; atrasadas e efetivadas ficam; grava end_date e nada mais é gerado', async () => {
+  const today = todayISO();
+  const r = await seed();
+  const all = occ(r.id);
+  const late = all.filter((t) => t.date < today);
+  const future = all.filter((t) => t.date >= today);
+  assert.ok(late.length > 1 && future.length > 1);
+  await A.setPaid(late[0], true);
+  await A.setPaid(future[1], true); // pago adiantado: também fica
+  await A.endRecurrence(r.id);
+
+  const left = occ(r.id);
+  assert.deepEqual(left.map((t) => t.id), [...late.map((t) => t.id), future[1].id]);
+  assert.deepEqual(left.filter((t) => t.status === 'pending').map((t) => t.id), late.slice(1).map((t) => t.id), 'atrasadas continuam pendentes');
+  assert.deepEqual([rule(r.id).end_date, rule(r.id).active], [addDays(today, -1), false]);
+  await A.extendRecurrences();
+  assert.deepEqual(occ(r.id).map((t) => t.id), left.map((t) => t.id), 'estender não gera nada');
+
+  // mesmo se outro aparelho reativar a regra, a data final segura: nada de hoje em diante
+  const { id, ...d } = rule(r.id);
+  await db.save('recurrence', id, { ...d, active: true, generated_until: null });
+  await A.reload();
+  await A.extendRecurrences();
+  assert.ok(occ(r.id).every((t) => t.date < today || t.id === future[1].id));
+
+  // regra que ainda não começou: a data final não pode ficar antes do início (o servidor recusaria)
+  const start = addDays(today, 10);
+  const f = await seed({ start_date: start });
+  await A.endRecurrence(f.id);
+  assert.equal(occ(f.id).length, 0);
+  assert.deepEqual([rule(f.id).end_date, rule(f.id).active], [start, false]);
+  await A.extendRecurrences();
+  assert.equal(occ(f.id).length, 0);
+
+  // já encerrada: não grava de novo; data final que já existia não é adiada
+  const q = await db.pending();
+  await A.endRecurrence(f.id);
+  assert.equal(await db.pending(), q);
+  const old = addDays(today, -90);
+  const g = await seed({ end_date: old });
+  await A.endRecurrence(g.id);
+  assert.deepEqual([rule(g.id).end_date, rule(g.id).active], [old, false]);
+});
+
+test('editRule: muda só as pendentes a partir da data; anteriores e efetivadas intactas; mesmos ids, notas e datas', async () => {
+  const today = todayISO();
+  const r = await seed();
+  const all = occ(r.id);
+  const i = all.findIndex((t) => t.date >= today);
+  const [first, paid, noted] = [all[i], all[i + 1], all[i + 2]];
+  await A.setPaid(paid, true);
+  await A.saveTx(noted.id, { notes: 'nota', description: 'Especial' });
+  const snap = () => app.transactions.filter((t) => t.recurrence_id).map((t) => [t.id, t.date]).sort();
+  const before = snap();
+  await A.editRule(r.id, first.date, { description: 'Aluguel', amount_cents: 20000, account_id: r.account_id, category_id: null });
+
+  const nr = app.recurrences.find((x) => x.id !== r.id);
+  assert.ok(nr, 'há atrasadas antes da data: a regra é dividida');
+  assert.deepEqual([nr.amount_cents, rule(r.id).amount_cents, rule(r.id).end_date], [20000, 10000, addDays(first.date, -1)]);
+  assert.deepEqual(snap(), before, 'mesmos ids e datas: nada duplica nem some');
+  const get = (id) => app.transactions.find((t) => t.id === id);
+  for (const t of all) {
+    const now = get(t.id);
+    const changed = t.date >= first.date && t.id !== paid.id;
+    assert.deepEqual([now.amount_cents, now.recurrence_id], changed ? [20000, nr.id] : [10000, r.id], t.date);
+  }
+  assert.deepEqual([get(noted.id).notes, get(noted.id).description], ['nota', 'Especial'], 'nota e edição individual preservadas');
+  await A.extendRecurrences();
+  assert.deepEqual(snap(), before, 'estender não regera nada');
+
+  // sem pendente antes da data: não divide (a regra muda e segue com o histórico)
+  const s = await seed({ start_date: addDays(today, 3) });
+  const mine = occ(s.id);
+  await A.editRule(s.id, mine[0].date, { description: 'Novo nome', amount_cents: s.amount_cents, account_id: s.account_id, category_id: null });
+  assert.equal(app.recurrences.length, 3);
+  assert.equal(rule(s.id).description, 'Novo nome');
+  assert.ok(occ(s.id).every((t) => t.description === 'Novo nome'));
+  assert.deepEqual(occ(s.id).map((t) => t.id), mine.map((t) => t.id));
+
+  // nada mudou: não grava; valor inválido: recusa
+  const q = await db.pending();
+  await A.editRule(s.id, mine[0].date, { description: 'Novo nome', amount_cents: s.amount_cents, account_id: s.account_id, category_id: null });
+  assert.equal(await db.pending(), q);
+  await assert.rejects(A.editRule(s.id, mine[0].date, { amount_cents: 0 }), /Valor inválido/);
 });

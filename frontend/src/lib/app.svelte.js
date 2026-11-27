@@ -4,7 +4,7 @@
 import * as db from './db.js';
 import * as sync from './sync.js';
 import { uuidv7 } from './uuid.js';
-import { materialize, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment } from './finance.js';
+import { materialize, validateRule, horizon, todayISO, txDoc, splitInstallments, addDays, validCents, isValidISO, balances, adjustment } from './finance.js';
 
 export const app = $state({
   ready: false,
@@ -192,9 +192,11 @@ async function addRecurrence(rec, extra = [], id = uuidv7()) {
 
 export const createRecurrence = (f) => serial(async () => {
   checkTx(f.amount_cents, f.start_date);
-  await addRecurrence({ kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
+  const rec = { kind: f.kind, description: f.description, amount_cents: f.amount_cents, account_id: f.account_id,
     category_id: f.category_id ?? null, frequency: f.frequency, interval_n: f.interval_n ?? 1, start_date: f.start_date,
-    end_date: null, active: true, generated_until: null });
+    end_date: f.end_date || null, active: true, generated_until: null };
+  validateRule(rec); // materialize não valida quando a data final já passou: sem isto a regra ficaria local e o servidor recusaria
+  await addRecurrence(rec);
   await reload();
 });
 
@@ -205,20 +207,24 @@ const RECURRING_FIELDS = ['description', 'amount_cents', 'account_id', 'category
  * Edita um lançamento que veio de uma recorrência.
  *  one       só esta ocorrência (sempre, se ela já foi paga)
  *  all       a regra e as ocorrências pendentes (só os campos compartilhados que mudaram)
- *  following esta e as próximas: a regra antiga termina no dia anterior e nasce uma cópia a partir desta
+ *  following esta e as próximas: a regra antiga termina no dia anterior e as pendentes seguintes passam para uma cópia dela
  * A ocorrência clicada recebe sempre todas as `changes`.
  */
-export const editRecurring = (tx, scope, changes) => serial(async () => {
+export const editRecurring = (tx, scope, changes) => serial(() => editOccurrence(tx, scope, changes));
+// `ruleChanges`: campos compartilhados já decididos por quem chama (editRule compara com a regra, não com a ocorrência).
+async function editOccurrence(tx, scope, changes, ruleChanges) {
   const rec = app.recurrences.find((r) => r.id === tx.recurrence_id);
   if (scope === 'one' || !rec || tx.status === 'paid') return saveTx(tx.id, changes);
   const base = doc(app.transactions.find((t) => t.id === tx.id) ?? tx);
-  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (tx[k] ?? null)).map((k) => [k, changes[k]]));
+  const shared = ruleChanges ?? Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (tx[k] ?? null)).map((k) => [k, changes[k]]));
   const clicked = (extra) => put('transaction', tx.id, txDoc({ ...base, ...changes, ...extra }));
   if (scope === 'following' && tx.date > rec.start_date) {
     const nid = uuidv7();
-    await addRecurrence({ ...doc(rec), ...shared, generated_until: tx.date }, [
+    // As pendentes seguintes são religadas (não apagadas e regeradas): mantêm id, notas e edições individuais.
+    // Por isso a regra nova herda o `generated_until` (nunca antes da clicada): só gera o que ainda não existia.
+    await addRecurrence({ ...doc(rec), ...shared, generated_until: rec.generated_until > tx.date ? rec.generated_until : tx.date }, [
       put('recurrence', rec.id, { ...doc(rec), end_date: addDays(tx.date, -1) }),
-      ...pendingOf(rec.id).filter((t) => t.date > tx.date && t.id !== tx.id).map((t) => del('transaction', t.id)),
+      ...pendingOf(rec.id).filter((t) => t.date > tx.date && t.id !== tx.id).map((t) => put('transaction', t.id, { ...doc(t), ...shared, recurrence_id: nid })),
       clicked({ recurrence_id: nid }),
     ], nid);
   } else { // 'all' (ou 'following' na primeira ocorrência, que é a regra inteira)
@@ -229,6 +235,40 @@ export const editRecurring = (tx, scope, changes) => serial(async () => {
     }
     await sync.saveMany(items);
   }
+  await reload();
+}
+
+/**
+ * Edita pela regra (tela de Repetições): mudam a regra e as pendentes com data >= `from`; as anteriores e as efetivadas não.
+ * Reaproveita editRecurring: `all` se não há pendente antes de `from`, senão `following` a partir da primeira pendente dali.
+ */
+export const editRule = (id, from, changes) => serial(async () => {
+  const rec = app.recurrences.find((r) => r.id === id);
+  if (!rec) return;
+  const shared = Object.fromEntries(RECURRING_FIELDS.filter((k) => k in changes && (changes[k] ?? null) !== (rec[k] ?? null)).map((k) => [k, changes[k]]));
+  if (!Object.keys(shared).length) return;
+  checkTx(shared.amount_cents ?? rec.amount_cents, rec.start_date);
+  const mine = pendingOf(id).sort((a, b) => a.date.localeCompare(b.date));
+  const tx = mine.find((t) => t.date >= from);
+  if (tx) return editOccurrence(tx, tx === mine[0] ? 'all' : 'following', shared, shared);
+  await sync.save('recurrence', id, { ...doc(rec), ...shared }); // nada pendente dali em diante: vale para o que ainda for gerado
+  await reload();
+});
+
+/**
+ * Encerra a repetição: saem as pendentes de hoje em diante; as atrasadas (data < hoje) e as efetivadas ficam.
+ * Grava `end_date` (ontem; nunca antes do início, que o servidor recusa, nem depois de uma data final que já existia)
+ * e desativa: nada mais é gerado. Já encerrada e sem nada a tirar: não grava de novo.
+ */
+export const endRecurrence = (id) => serial(async () => {
+  const rec = app.recurrences.find((r) => r.id === id);
+  if (!rec) return;
+  const today = todayISO();
+  const last = addDays(today, -1);
+  const end = [rec.start_date, rec.end_date && rec.end_date < last ? rec.end_date : last].sort().at(-1);
+  const gone = pendingOf(id).filter((t) => t.date >= today).map((t) => del('transaction', t.id));
+  if (!gone.length && !rec.active && rec.end_date === end) return;
+  await sync.saveMany([...gone, put('recurrence', id, { ...doc(rec), active: false, end_date: end })]);
   await reload();
 });
 

@@ -45,7 +45,7 @@ Escalas: espaço de 4 px (`--space-1..16`), raios `--radius-1..4` + `--radius-pi
 | Ações | `Button` | `variant` primary/secondary/ghost/danger, `size` md/sm, `loading`, `disabled`, `block`, `type`, `onclick` |
 | | `IconButton` | `label` (**obrigatório**, vira aria-label), `icon`, `tone`, `disabled`, `onclick`, `aria-*` de menu |
 | Formulário | `Field` | `label`, `help`, `error` (liga por id/`aria-describedby`/`aria-invalid`) |
-| | `TextInput` | `label`, `help`, `error`, `value` (bindable), `type`, `placeholder`, `maxlength`, `inputmode`... |
+| | `TextInput` | `label`, `help`, `error`, `value` (bindable), `type`, `placeholder`, `maxlength`, `inputmode`...; `multiline` vira `<textarea>` (texto longo, ex.: notas) |
 | | `MoneyInput` | `label`, `help`, `error`, `value` em centavos (bindable); digita "pela direita" |
 | | `Select` | `label`, `help`, `error`, `value`, `options [[valor, rótulo]]` |
 | | `Switch` | `checked`, `label` ou `labelledby`, `onchange` |

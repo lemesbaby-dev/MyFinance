@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { money, parseMoney } from './format.js';
 import {
   addMonths, addDays, occurrences, splitInstallments, balances, monthView, materialize, horizon, shiftMonth, monthEnd,
-  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment,
+  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment, filterTxs, rhythm, recurrenceView,
 } from './finance.js';
 
 const nbsp = (s) => s.replace(/ /g, ' ');
@@ -141,6 +141,50 @@ test('filtro Todos soma pagos e pendentes; transferência fica fora dos totais',
   assert.equal(v.expense_cents, 150000 + 30000 + 12000 + 2500);
   assert.equal(v.result_cents, v.income_cents - v.expense_cents);
   assert.ok(v.rows.some((r) => r.kind === 'transfer'), 'transferência aparece na lista');
+});
+
+// ---- busca e filtros da aba Mês ----
+const ftx = [
+  { id: 'f1', kind: 'expense', description: 'Pão de Açúcar', notes: '', account_id: 'a', transfer_account_id: null, category_id: 'sub' },
+  { id: 'f2', kind: 'expense', description: 'Farmácia', notes: 'remédio da MÃE', account_id: 'b', transfer_account_id: null, category_id: 'pai' },
+  { id: 'f3', kind: 'transfer', description: 'Reserva', notes: '', account_id: 'a', transfer_account_id: 'b', category_id: null },
+  { id: 'f4', kind: 'income', description: 'Salário', account_id: 'c', transfer_account_id: null, category_id: 'outra' },
+];
+const fcats = [{ id: 'pai', parent_id: null }, { id: 'sub', parent_id: 'pai' }, { id: 'outra', parent_id: null }];
+const fids = (f) => filterTxs(ftx, f, fcats).map((t) => t.id);
+
+test('filterTxs: sem filtro devolve a própria lista', () => {
+  assert.equal(filterTxs(ftx, {}, fcats), ftx);
+  assert.equal(filterTxs(ftx, { q: '   ' }, fcats), ftx);
+});
+
+test('filterTxs: busca ignora maiúsculas e acentos, em descrição e notas', () => {
+  assert.deepEqual(fids({ q: 'pao de acucar' }), ['f1']);
+  assert.deepEqual(fids({ q: 'AÇÚCAR' }), ['f1']);
+  assert.deepEqual(fids({ q: 'mae' }), ['f2']);
+  assert.deepEqual(fids({ q: ' salario ' }), ['f4']); // lançamento sem `notes` não quebra
+  assert.deepEqual(fids({ q: 'xyz' }), []);
+});
+
+test('filterTxs: conta inclui transferência que sai ou entra nela', () => {
+  assert.deepEqual(fids({ accountId: 'a' }), ['f1', 'f3']);
+  assert.deepEqual(fids({ accountId: 'b' }), ['f2', 'f3']);
+  assert.deepEqual(fids({ accountId: 'c' }), ['f4']);
+});
+
+test('filterTxs: categoria pai inclui subcategorias; subcategoria não puxa o pai', () => {
+  assert.deepEqual(fids({ categoryId: 'pai' }), ['f1', 'f2']);
+  assert.deepEqual(fids({ categoryId: 'sub' }), ['f1']);
+});
+
+test('filterTxs: filtros combinam (E) e alimentam o monthView', () => {
+  assert.deepEqual(fids({ accountId: 'a', categoryId: 'pai' }), ['f1']);
+  assert.deepEqual(fids({ q: 'reserva', accountId: 'b' }), ['f3']);
+  assert.deepEqual(fids({ q: 'farm', accountId: 'a' }), []);
+  const v = monthView(filterTxs(mtx, { categoryId: 'c1' }), month, 'all', today);
+  assert.ok(v.rows.length > 0 && v.rows.every((r) => r.category_id === 'c1'));
+  assert.ok(v.spending.every((s) => s.category_id === 'c1'));
+  assert.equal(v.income_cents, 0);
 });
 
 test('monthView ignora lançamentos de conta arquivada', () => {
@@ -308,4 +352,57 @@ test('ajuste muda o saldo da conta, mas não os totais nem os gastos por categor
   assert.equal(v.rows.length, 2); // o ajuste continua na lista
   // excluir o ajuste devolve o saldo anterior
   assert.equal(balances(acc, txs.filter((x) => x.id !== '2'), '2026-10-31').accounts[0].current_cents, 600000);
+});
+
+test('rhythm: ritmo em linguagem de leigo, com intervalo', () => {
+  const r = (frequency, interval_n, start_date) => rhythm({ frequency, interval_n, start_date });
+  assert.equal(r('monthly', 1, '2026-01-05'), 'Todo mês, dia 5');
+  assert.equal(r('monthly', 2, '2026-01-31'), 'A cada 2 meses, dia 31');
+  assert.equal(r('weekly', 1, '2026-11-23'), 'Toda semana, às segundas'); // 23/11/2026 é segunda
+  assert.equal(r('weekly', 2, '2026-11-28'), 'A cada 2 semanas, aos sábados');
+  assert.equal(r('yearly', 1, '2026-03-05'), 'Todo ano, em 05/03');
+  assert.equal(r('daily', 1, '2026-03-05'), 'Todo dia');
+  assert.equal(r('daily', 3, '2026-03-05'), 'A cada 3 dias');
+});
+
+test('recurrenceView: próximo vencimento, atraso, encerradas e resumo de 30 dias', () => {
+  const today = '2026-11-27';
+  const rec = (id, o = {}) => ({ id, kind: 'expense', description: id, amount_cents: 100, frequency: 'monthly', interval_n: 1, start_date: '2026-01-05', end_date: null, active: true, generated_until: '2027-11-27', ...o });
+  let n = 0;
+  const tx = (recurrence_id, date, o = {}) => ({ id: `t${++n}`, ...txDoc({ recurrence_id, date, amount_cents: 100, ...o }) });
+  const recs = [
+    rec('aluguel'),
+    rec('condominio'),
+    rec('salario', { kind: 'income' }),
+    rec('desativada', { active: false }),
+    rec('passou', { end_date: '2026-10-31' }),
+    rec('cortada', { end_date: '2026-12-04' }), // metade antiga de um "este e os próximos": nada mais por vir
+    rec('academia', { end_date: '2027-05-10' }),
+  ];
+  const txs = [
+    tx('aluguel', '2026-12-05'), tx('aluguel', '2027-01-05'), tx('aluguel', '2026-11-05', { status: 'paid' }),
+    tx('condominio', '2026-12-10'), tx('condominio', '2026-11-10'), tx('condominio', '2026-10-10'),
+    tx('salario', '2026-11-27', { kind: 'income', amount_cents: 5000 }), tx('salario', '2026-12-27', { kind: 'income', amount_cents: 5000 }), tx('salario', '2026-12-28', { kind: 'income', amount_cents: 1 }),
+    tx('passou', '2026-10-05'),
+    { ...tx('academia', '2026-12-10'), id: 'recusado' },
+    tx(null, '2026-12-01', { amount_cents: 999 }), // avulso: fora do resumo
+  ];
+  const v = recurrenceView(recs, txs, today, new Set(['recusado']));
+  const row = (id) => v.rows.find((r) => r.rec.id === id);
+  assert.deepEqual([row('aluguel').next, row('aluguel').overdue, row('aluguel').paid, row('aluguel').ended], ['2026-12-05', 0, 1, false]);
+  assert.deepEqual([row('condominio').next, row('condominio').overdue, row('condominio').pending[0]], ['2026-12-10', 2, '2026-10-10']);
+  assert.deepEqual(['desativada', 'passou', 'cortada', 'academia'].map((id) => row(id).ended), [true, true, true, false]);
+  assert.equal(row('passou').overdue, 1, 'encerrada mantém o atrasado');
+  assert.deepEqual(v.rows.filter((r) => !r.ended).map((r) => r.rec.id), ['condominio', 'salario', 'aluguel', 'academia'], 'atrasado primeiro, depois o que vence antes');
+  // 30 dias = 27/11 a 26/12: salário de hoje entra, o de 27/12 não; aluguel 05/12 e condomínio 10/12; atrasados, recusado e avulso fora
+  assert.deepEqual([v.income_cents, v.expense_cents], [5000, 200]);
+  assert.deepEqual(recurrenceView([], txs, today), { rows: [], income_cents: 0, expense_cents: 0 });
+});
+
+test('recurrenceView: conta arquivada fica fora do resumo (como na aba Mês), mas a repetição continua listada', () => {
+  const rec = { id: 'r', kind: 'expense', description: 'r', amount_cents: 200, frequency: 'monthly', interval_n: 1, start_date: '2026-01-05', end_date: null, active: true, generated_until: '2027-11-27' };
+  const txs = [{ id: 'a', ...txDoc({ recurrence_id: 'r', date: '2026-12-05', amount_cents: 200, account_id: 'velha' }) }, { id: 'b', ...txDoc({ recurrence_id: 'r', date: '2026-12-06', amount_cents: 300, account_id: 'ativa' }) }];
+  const v = recurrenceView([rec], txs, '2026-11-27', new Set(), new Set(['velha']));
+  assert.equal(v.expense_cents, 300);
+  assert.equal(v.rows[0].pending.length, 2);
 });
