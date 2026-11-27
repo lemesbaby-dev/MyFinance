@@ -12,13 +12,24 @@ const { uuidv7 } = await import('./uuid.js');
 
 // Servidor falso com a mesma semântica do real: dup por op_id, rev crescente, tombstone.
 function fakeServer() {
-  const s = { rev: 0, rows: new Map(), seen: new Set(), online: true, loseResponse: false, forced: {}, applied: [], page: Infinity };
+  const s = { rev: 0, gcRev: 0, rows: new Map(), seen: new Set(), online: true, loseResponse: false, forced: {}, applied: [], page: Infinity };
+  // GC do servidor real: descarta os tombstones e guarda o maior rev descartado.
+  s.gc = () => {
+    for (const [k, r] of s.rows) if (r.deleted) (s.rows.delete(k), (s.gcRev = Math.max(s.gcRev, r.rev)));
+  };
+  const resync = { ok: false, status: 409, json: async () => ({ error: 'aparelho muito tempo sem sincronizar', resync: true }) };
   globalThis.fetch = async (url, init) => {
     if (!s.online) throw new TypeError('offline');
     const path = new URL(url, 'http://x');
     let body;
     if (init.method === 'POST') {
-      const results = JSON.parse(init.body).ops.map((op) => {
+      const sent = JSON.parse(init.body);
+      // o servidor real recusa campo desconhecido: marcas locais da fila (seq, create) não podem vazar
+      if (sent.ops.some((op) => Object.keys(op).some((k) => !['op_id', 'kind', 'id', 'action', 'data'].includes(k)))) {
+        return { ok: false, status: 400, json: async () => ({ error: 'JSON inválido: campo desconhecido' }) };
+      }
+      if ((sent.cursor ?? 0) < s.gcRev) return resync;
+      const results = sent.ops.map((op) => {
         if (s.seen.has(op.op_id)) return { op_id: op.op_id, status: 'dup' };
         if (s.forced[op.id]) return { op_id: op.op_id, status: s.forced[op.id], error: 'forçado' }; // só `ok` entra em seen
         s.seen.add(op.op_id);
@@ -31,8 +42,10 @@ function fakeServer() {
     } else {
       const since = Number(path.searchParams.get('since'));
       const all = [...s.rows.values()].filter((r) => r.rev > since).sort((a, b) => a.rev - b.rev);
+      if (since < s.gcRev && path.searchParams.get('full') !== '1') return resync;
       const changes = all.slice(0, s.page);
-      body = { changes, cursor: changes.at(-1)?.rev ?? since, more: all.length > changes.length, rev: s.rev };
+      const more = all.length > changes.length;
+      body = { changes, cursor: Math.max(changes.at(-1)?.rev ?? since, more ? 0 : s.gcRev), more, rev: s.rev };
     }
     return { ok: true, status: 200, json: async () => body };
   };
@@ -318,4 +331,153 @@ test('resetLocal limpa dados, fila, recusados e cursor, mas mantém usuário e s
   assert.equal(await db.getMeta('cursor'), null);
   assert.equal(await db.getMeta('user'), 'u1');
   assert.equal(await db.getMeta('synced'), true);
+});
+
+// ---------- GC de tombstones no servidor: cópia local antiga demais é refeita ----------
+
+const put = (id, data, deleted = false) => srv.rows.set('account/' + id, { kind: 'account', id, rev: ++srv.rev, deleted, data });
+const names = async () => (await db.list('account')).map((a) => a.id + '=' + a.name).sort();
+
+test('ressincronização: a cópia local fica igual à do servidor e a fila pendente sobrevive', async () => {
+  for (const id of ['a', 'b', 'c']) put(id, { ...acc, name: id });
+  await sync();
+  srv.online = false; // o aparelho some por muito tempo, com alterações na fila
+  await save('account', 'b', { ...acc, name: 'b editado offline' });
+  await save('account', 'novo', { ...acc, name: 'criado offline' });
+  await remove('account', 'c');
+  await sync();
+  assert.equal(await db.pending(), 3);
+
+  put('a', {}, true); // outro aparelho exclui `a` e cria `d`; o GC descarta o tombstone de `a`
+  put('d', { ...acc, name: 'd' });
+  srv.gc();
+  assert.equal(srv.rows.has('account/a'), false);
+
+  // só a troca da cópia local, ainda sem enviar nada: o que o servidor tem + a fila reaplicada
+  await db.replaceAll([...srv.rows.values()], srv.rev);
+  assert.deepEqual(await names(), ['b=b editado offline', 'd=d', 'novo=criado offline'], '`a` saiu; a fila continua valendo');
+  assert.equal(await db.pending(), 3, 'a fila sobrevive');
+  assert.equal((await db.getMeta('rejected', [])).length, 0);
+});
+
+test('ressincronização pelo sync: push recusado, cópia refeita em páginas, fila reenviada', async () => {
+  for (const id of ['a', 'b', 'c']) put(id, { ...acc, name: id });
+  await sync();
+  srv.online = false;
+  await save('account', 'b', { ...acc, name: 'b editado offline' });
+  await save('account', 'novo', { ...acc, name: 'criado offline' });
+  await sync();
+  srv.online = true;
+  put('a', {}, true);
+  put('d', { ...acc, name: 'd' });
+  srv.gc();
+  srv.page = 2;
+
+  assert.deepEqual(await sync(), { ok: true });
+  assert.deepEqual(await names(), ['b=b editado offline', 'c=c', 'd=d', 'novo=criado offline']);
+  const live = [...srv.rows.values()].filter((r) => !r.deleted).map((r) => r.id + '=' + r.data.name).sort();
+  assert.deepEqual(live, await names(), 'local e servidor iguais');
+  assert.equal(await db.pending(), 0);
+  assert.equal((await db.getMeta('rejected', [])).length, 0);
+  assert.ok((await db.getMeta('cursor')) >= srv.gcRev, 'cursor passou do marco: o próximo sync é incremental');
+  const gets = [];
+  const f = globalThis.fetch;
+  globalThis.fetch = (url, init) => (init.method === 'GET' && gets.push(url), f(url, init));
+  assert.deepEqual(await sync(), { ok: true });
+  assert.ok(gets.length === 1 && !gets[0].includes('full'), `segue incremental: ${gets}`);
+});
+
+test('ressincronização sem documento com rev alto: o cursor alcança o marco e não entra em laço', async () => {
+  put('a', { ...acc, name: 'a' });
+  put('b', { ...acc, name: 'b' });
+  await sync();
+  put('b', {}, true);
+  srv.gc(); // sobra só `a` (rev 1); marco = 3
+  assert.deepEqual(await sync(), { ok: true });
+  assert.deepEqual(await names(), ['a=a']);
+  assert.equal(await db.getMeta('cursor'), srv.gcRev);
+  await save('account', 'z', { ...acc, name: 'z' });
+  assert.deepEqual(await sync(), { ok: true }, 'o push seguinte não é mais recusado');
+  assert.equal(srv.rows.has('account/z'), true);
+});
+
+test('ressincronização: edição pendente de documento excluído e já coletado não o ressuscita', async () => {
+  put('a', { ...acc, name: 'a' });
+  put('conta', { ...acc, name: 'conta' });
+  await sync();
+  srv.online = false;
+  await save('account', 'a', { ...acc, name: 'a editado offline' }); // edição: o servidor já conhecia `a`
+  await sync();
+  srv.online = true;
+  put('a', {}, true);
+  srv.gc();
+
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(srv.rows.has('account/a'), false, 'não voltou para o servidor');
+  assert.equal(await db.get('account', 'a'), null, 'nem ficou na cópia local');
+  assert.equal(await db.pending(), 0);
+  const rej = await db.getMeta('rejected');
+  assert.deepEqual(rej.map((r) => [r.id, r.action, r.label, r.error]), [['a', 'upsert', 'a editado offline', 'foi excluído em outro aparelho']]);
+  assert.deepEqual(await names(), ['conta=conta']);
+});
+
+test('ressincronização: criar e depois editar offline continua sendo criação', async () => {
+  put('a', { ...acc, name: 'a' });
+  await sync();
+  srv.online = false;
+  await save('account', 'novo', { ...acc, name: 'v1' });
+  await save('account', 'novo', { ...acc, name: 'v2' });
+  await sync();
+  srv.online = true;
+  put('a', {}, true);
+  srv.gc();
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(srv.rows.get('account/novo').data.name, 'v2');
+  assert.equal((await db.getMeta('rejected', [])).length, 0);
+});
+
+test('ressincronização: operação enfileirada pelo app antigo (sem a marca) não é enviada nem perdida', async () => {
+  put('a', { ...acc, name: 'a' });
+  await sync();
+  srv.online = false;
+  await save('account', 'x', { ...acc, name: 'pode ser novo ou excluído' });
+  await sync();
+  srv.online = true;
+  const idb = await db.openDb(); // fila gravada antes desta versão: sem `create`
+  await new Promise((ok, fail) => {
+    const t = idb.transaction('outbox', 'readwrite');
+    const st = t.objectStore('outbox');
+    st.getAll().onsuccess = (e) => e.target.result.forEach(({ create, ...op }) => st.put(op));
+    t.oncomplete = ok;
+    t.onerror = () => fail(t.error);
+  });
+  put('a', {}, true);
+  srv.gc();
+
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(srv.rows.has('account/x'), false, 'na dúvida, não recria no servidor');
+  assert.equal((await db.get('account', 'x')).name, 'pode ser novo ou excluído', 'e não apaga o que o usuário digitou');
+  assert.deepEqual((await db.getMeta('rejected')).map((r) => r.id), ['x'], 'fica como recusado para o usuário decidir');
+  await save('account', 'x', { ...acc, name: 'salvo de novo' }); // salvar de novo = recriar
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(srv.rows.get('account/x').data.name, 'salvo de novo');
+});
+
+test('ressincronização: recusado que nunca chegou ao servidor continua local', async () => {
+  await save('account', 'ruim', { ...acc, name: 'recusado' });
+  srv.forced = { ruim: 'rejected' };
+  await sync();
+  put('a', { ...acc, name: 'a' });
+  put('a', {}, true);
+  srv.gc();
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal((await db.get('account', 'ruim')).name, 'recusado');
+  assert.equal((await db.getMeta('rejected')).length, 1);
+});
+
+test('replaceAll confere a geração dentro da transação', async () => {
+  const g = db.generation();
+  await db.wipe();
+  await assert.rejects(db.replaceAll([{ kind: 'account', id: 'x', deleted: false, data: acc }], 5, g), /usuário mudou/);
+  assert.equal((await db.list('account')).length, 0);
 });

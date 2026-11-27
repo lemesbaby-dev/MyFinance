@@ -45,7 +45,11 @@ async function call(method, path, body) {
     clearSession();
     onUnauthorized?.();
   }
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `Erro ${res.status}`);
+  if (!res.ok) {
+    const err = new ApiError(res.status, data.error ?? `Erro ${res.status}`);
+    err.resync = data.resync === true; // cópia local mais velha que o GC do servidor (ver sync.js)
+    throw err;
+  }
   return data;
 }
 
@@ -53,8 +57,8 @@ export const api = {
   authConfig: () => call('GET', '/api/auth/config'),
   loginGoogle: (id_token) => call('POST', '/api/auth/google', { id_token, device: navigator.userAgent.slice(0, 80) }),
   me: () => call('GET', '/api/auth/me'),
-  push: (ops) => call('POST', '/api/sync', { ops }),
-  pull: (since) => call('GET', `/api/sync?since=${since}`),
+  push: (ops, cursor) => call('POST', '/api/sync', { ops, cursor }),
+  pull: (since, full) => call('GET', `/api/sync?since=${since}${full ? '&full=1' : ''}`),
   logout: () => call('POST', '/api/auth/logout', {}),
   exportData: () => call('GET', '/api/export?format=json'),
   resetData: () => call('POST', '/api/reset', {}),
