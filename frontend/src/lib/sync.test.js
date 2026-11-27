@@ -457,7 +457,8 @@ test('ressincronização: operação enfileirada pelo app antigo (sem a marca) n
   assert.deepEqual(await sync(), { ok: true });
   assert.equal(srv.rows.has('account/x'), false, 'na dúvida, não recria no servidor');
   assert.equal((await db.get('account', 'x')).name, 'pode ser novo ou excluído', 'e não apaga o que o usuário digitou');
-  assert.deepEqual((await db.getMeta('rejected')).map((r) => r.id), ['x'], 'fica como recusado para o usuário decidir');
+  // sem a marca não dá para afirmar que foi excluído em outro aparelho: a mensagem diz o que fazer
+  assert.deepEqual((await db.getMeta('rejected')).map((r) => [r.id, r.error]), [['x', 'não foi enviado; salve de novo para manter']], 'fica como recusado para o usuário decidir');
   await save('account', 'x', { ...acc, name: 'salvo de novo' }); // salvar de novo = recriar
   assert.deepEqual(await sync(), { ok: true });
   assert.equal(srv.rows.get('account/x').data.name, 'salvo de novo');
@@ -480,4 +481,42 @@ test('replaceAll confere a geração dentro da transação', async () => {
   await db.wipe();
   await assert.rejects(db.replaceAll([{ kind: 'account', id: 'x', deleted: false, data: acc }], 5, g), /usuário mudou/);
   assert.equal((await db.list('account')).length, 0);
+});
+
+test('recusas em lotes diferentes, com marco de GC no servidor: um sync só resolve, sem erro falso', async () => {
+  put('a', { ...acc, name: 'a' });
+  put('b', { ...acc, name: 'b' });
+  put('b', {}, true);
+  srv.gc(); // marco = 3
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(await db.getMeta('cursor'), srv.gcRev, 'aparelho em dia');
+
+  // três lotes na fila (200 por lote), com recusa nos dois primeiros
+  await db.saveMany(Array.from({ length: 450 }, (_, i) => ({ kind: 'account', id: 'n' + i, data: { ...acc, name: 'n' + i } })));
+  srv.forced = { n0: 'rejected', n220: 'rejected' };
+  assert.deepEqual(await sync(), { ok: true });
+  assert.equal(await db.pending(), 0);
+  assert.deepEqual((await db.getMeta('rejected')).map((r) => r.id), ['n0', 'n220']);
+  assert.equal(srv.applied.filter((o) => o.id.startsWith('n')).length, 448);
+});
+
+test('salvar de novo um recusado é criação (o servidor nunca teve o documento)', async () => {
+  await save('account', 'x', acc);
+  srv.forced = { x: 'rejected' };
+  await sync();
+  assert.equal((await db.getMeta('rejected')).length, 1);
+  assert.ok(await db.get('account', 'x'), 'a cópia local do recusado continua');
+  await save('account', 'x', { ...acc, name: 'corrigido' });
+  assert.deepEqual((await db.nextOps(10)).map((o) => [o.id, o.create]), [['x', true]]);
+  await save('account', 'x', { ...acc, name: 'de novo' }); // já saiu dos recusados e há cópia local: edição comum
+  assert.deepEqual((await db.nextOps(10)).map((o) => o.create), [true, false]);
+});
+
+test('requeueAll marca tudo como criação (o servidor restaurado perdeu os documentos)', async () => {
+  await save('account', 'a', acc);
+  await save('account', 'a', { ...acc, name: 'editado' }); // a 2ª gravação é edição (create: false)
+  await sync();
+  assert.equal(await db.pending(), 0);
+  await db.requeueAll();
+  assert.deepEqual((await db.nextOps(10)).map((o) => [o.id, o.create]), [['a', true]]);
 });

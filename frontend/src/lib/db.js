@@ -202,10 +202,13 @@ export function replaceAll(changes, cursor, g) {
       else if (alive.has(k) || op.create) alive.add(k);
       else {
         s.outbox.delete(op.seq);
-        gone.set(k, { kind: op.kind, id: op.id, action: 'upsert', label: op.data?.name ?? op.data?.description ?? '', error: 'foi excluído em outro aparelho' });
         // Fila gravada por versão anterior do app não tem a marca: pode ser criação. Na dúvida a cópia local fica
-        // (como qualquer recusado: fora dos saldos, o usuário descarta ou salva de novo).
-        if (op.create === undefined) parked.add(k);
+        // (como qualquer recusado: fora dos saldos, o usuário descarta ou salva de novo) e a mensagem não afirma
+        // uma exclusão que talvez não tenha existido.
+        const unmarked = op.create === undefined;
+        gone.set(k, { kind: op.kind, id: op.id, action: 'upsert', label: op.data?.name ?? op.data?.description ?? '',
+          error: unmarked ? 'não foi enviado; salve de novo para manter' : 'foi excluído em outro aparelho' });
+        if (unmarked) parked.add(k);
         continue;
       }
       queued.add(k);

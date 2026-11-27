@@ -40,28 +40,31 @@ const take = (ops) => {
 
 // Envia o lote; se o servidor responder 400/413, divide ao meio e tenta de novo (até 1 op).
 // Uma op que sozinha continua dando 400/413 vira "rejected" local, para não travar a fila.
-async function send(ops, g) {
+async function send(ops, g, cursor) {
   try {
     // seq e create são marcas locais; o cursor prova ao servidor que esta cópia viu todas as exclusões já descartadas
-    const { results } = await api.push(ops.map(({ seq, create, ...op }) => op), await db.getMeta('cursor', 0));
+    const { results } = await api.push(ops.map(({ seq, create, ...op }) => op), cursor);
     changed(g);
     return results;
   } catch (e) {
     if (!(e instanceof ApiError) || (e.status !== 400 && e.status !== 413)) throw e;
     if (ops.length === 1) return [{ op_id: ops[0].op_id, status: 'rejected', error: e.message }];
     const mid = ops.length >> 1;
-    const first = await send(ops.slice(0, mid), g);
-    return [...first, ...(await send(ops.slice(mid), g))];
+    const first = await send(ops.slice(0, mid), g, cursor);
+    return [...first, ...(await send(ops.slice(mid), g, cursor))];
   }
 }
 
 const labelOf = (op) => op.data?.name ?? op.data?.description ?? '';
 
 async function push(g) {
+  // Lido uma vez por envio: uma recusa zera o cursor GRAVADO (para o pull reler tudo), mas a cópia local continua
+  // tão em dia quanto estava. Mandar esse 0 no lote seguinte faria o servidor recusá-lo como cópia velha demais.
+  const cursor = await db.getMeta('cursor', 0);
   for (;;) {
     const ops = take(await db.nextOps(BATCH));
     if (!ops.length) return;
-    const results = await send(ops, g);
+    const results = await send(ops, g, cursor);
     const byId = new Map(results.map((r) => [r.op_id, r]));
     const done = [], drop = [], rejected = [];
     let reset = false;
