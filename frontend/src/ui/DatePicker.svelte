@@ -5,8 +5,9 @@
   import { menuSide } from './logic.js';
   import { addDays, addMonths, isValidISO, monthGrid, monthOf, todayISO } from '../lib/finance.js';
   // Calendário próprio (o nativo não aceita estilo). value = "YYYY-MM-DD".
+  // clearable: data opcional, "Limpar" no rodapé volta para vazio; no teclado, Delete/Backspace no gatilho (Tab fecha o popup).
   // Teclado: ↓ abre; ←→ ±1 dia, ↑↓ ±1 semana, PageUp/PageDown ±1 mês; Enter escolhe; Escape fecha e devolve o foco; Tab fecha.
-  let { label, help = '', error = '', value = $bindable(''), disabled } = $props();
+  let { label, help = '', error = '', value = $bindable(''), disabled, placeholder = 'Escolha a data', clearable = false } = $props();
   const WEEK = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
   const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const KEYS = { ArrowLeft: (c) => addDays(c, -1), ArrowRight: (c) => addDays(c, 1), ArrowUp: (c) => addDays(c, -7), ArrowDown: (c) => addDays(c, 7), PageUp: (c) => addMonths(c, -1), PageDown: (c) => addMonths(c, 1) };
@@ -45,7 +46,10 @@
     addEventListener('resize', s);
     return () => { removeEventListener('pointerdown', h); removeEventListener('scroll', s, true); removeEventListener('resize', s); };
   });
-  function onTriggerKey(e) { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); show(); } }
+  function onTriggerKey(e) {
+    if (e.key === 'ArrowDown' && !open) { e.preventDefault(); show(); }
+    if (clearable && value && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); value = ''; }
+  }
   function onKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return close(); }
     if (e.key === 'Tab') return close(false);
@@ -58,8 +62,8 @@
 <Field {label} {help} {error}>
   {#snippet children(a)}
     <div class="ui-date" bind:this={root}>
-      <button type="button" class="trg" class:bad={!!error} id={a.id} aria-haspopup="dialog" aria-expanded={open} aria-describedby={a['aria-describedby']} {disabled} onclick={() => (open ? close() : show())} onkeydown={onTriggerKey}>
-        <span>{shown || 'Escolha a data'}</span><Icon name="calendar" />
+      <button type="button" class="trg" class:bad={!!error} id={a.id} aria-haspopup="dialog" aria-expanded={open} aria-keyshortcuts={clearable ? 'Delete' : undefined} aria-describedby={a['aria-describedby']} {disabled} onclick={() => (open ? close() : show())} onkeydown={onTriggerKey}>
+        <span>{shown || placeholder}</span><Icon name="calendar" />
       </button>
       {#if open}
         <div class="pop" style={pos} data-popup role="dialog" tabindex="-1" aria-label="Escolher data" onkeydown={onKey}>
@@ -75,7 +79,7 @@
               <button type="button" class="day" data-d={d} class:out={monthOf(d) !== month} class:sel={d === value} class:today={d === today} tabindex={d === cur ? 0 : -1} aria-pressed={d === value} aria-label={longDate(d)} onclick={() => pick(d)}>{+d.slice(8)}</button>{/if}
             {/each}
           </div>
-          <div class="foot"><button type="button" class="link" onclick={() => pick(today)}>Hoje</button></div>
+          <div class="foot">{#if clearable && value}<button type="button" class="link" onclick={() => pick('')}>Limpar</button>{/if}<button type="button" class="link" onclick={() => pick(today)}>Hoje</button></div>
         </div>
       {/if}
     </div>
