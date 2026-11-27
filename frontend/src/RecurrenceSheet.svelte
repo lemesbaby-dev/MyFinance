@@ -9,6 +9,7 @@
   import MoneyInput from './ui/MoneyInput.svelte';
   import TextInput from './ui/TextInput.svelte';
   import Select from './ui/Select.svelte';
+  import DatePicker from './ui/DatePicker.svelte';
   import { confirmDialog } from './ui/confirm.js';
 
   let { id, today, onclose } = $props();
@@ -35,7 +36,6 @@
   const upcoming = $derived(row ? row.pending.length - row.overdue : 0);
   const accOpts = $derived(app.accounts.filter((a) => !a.archived || a.id === rec?.account_id).map((a) => [a.id, a.name]));
   const catOpts = $derived([['', 'Sem categoria'], ...app.categories.filter((c) => c.kind === rec?.kind).map((c) => [c.id, c.name])]);
-  const fromOpts = $derived([...new Set(row?.pending)].map((d) => [d, fullDate(d) + (d < today ? ' (atrasado)' : '')]));
   const facts = $derived(row && [
     `${rhythm(rec)} · desde ${fullDate(rec.start_date)}`,
     rec.end_date && (rec.end_date < today ? `parou em ${fullDate(rec.end_date)}` : !row.ended && `até ${fullDate(rec.end_date)}`),
@@ -82,8 +82,8 @@
     <TextInput label="Descrição" bind:value={description} maxlength="200" error={err('description')} />
     <Select label="Conta" bind:value={accountId} options={accOpts} />
     <Select label="Categoria" bind:value={categoryId} options={catOpts} />
-    {#if fromOpts.length}
-      <Select label="Mudar a partir de" bind:value={from} options={fromOpts} help="Mudam os lançamentos pendentes dessa data em diante. Os anteriores e os já efetivados não mudam." />
+    {#if row.pending.length}
+      <DatePicker label="Mudar a partir de" bind:value={from} help="Mudam os lançamentos pendentes dessa data em diante. Os anteriores e os já efetivados não mudam." />
     {:else}
       <p class="note">Não há lançamentos pendentes agora: a mudança vale para os próximos que forem criados.</p>
     {/if}

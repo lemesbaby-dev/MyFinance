@@ -424,6 +424,15 @@ test('endRecurrence: saem só as pendentes de hoje em diante; atrasadas e efetiv
   assert.deepEqual([rule(f.id).end_date, rule(f.id).active], [start, false]);
   await A.extendRecurrences();
   assert.equal(occ(f.id).length, 0);
+
+  // já encerrada: não grava de novo; data final que já existia não é adiada
+  const q = await db.pending();
+  await A.endRecurrence(f.id);
+  assert.equal(await db.pending(), q);
+  const old = addDays(today, -90);
+  const g = await seed({ end_date: old });
+  await A.endRecurrence(g.id);
+  assert.deepEqual([rule(g.id).end_date, rule(g.id).active], [old, false]);
 });
 
 test('editRule: muda só as pendentes a partir da data; anteriores e efetivadas intactas; mesmos ids, notas e datas', async () => {

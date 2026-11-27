@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import { app, setPaid, deleteTx, deleteRecurring } from './lib/app.svelte.js';
   import { balances, filterTxs, monthView, monthEnd, monthOf, shiftMonth, todayISO } from './lib/finance.js';
   import { shortDate } from './lib/format.js';
@@ -41,6 +42,7 @@
   let find = $state({ q: '', accountId: '', categoryId: '' }); // busca e filtros: valem enquanto a aba Mês está aberta
   let finding = $state(false);
   let bar = $state();
+  let subs = $state();
   let scopeFor = $state(null);
   let error = $state('');
 
@@ -90,6 +92,12 @@
   });
   const removeScoped = guard(async (scope) => { const t = scopeFor; scopeFor = null; await deleteRecurring(t, scope); });
   const refreshToday = () => (today = todayISO());
+  // Encerrar tira da tela a linha que abriu o detalhe: sem ter para onde voltar, o foco vai para a subaba atual.
+  async function closeRule() {
+    ruleId = null;
+    await tick();
+    if (document.activeElement === document.body) subs?.querySelector('.on')?.focus();
+  }
 
   const metaOf = (t, withDate) => [
     withDate ? shortDate(t.date) : '',
@@ -125,14 +133,14 @@
     menuLabel="Mais ações: {t.description}" />
 {/snippet}
 
-<div class="subs" role="group" aria-label="Seções de Mês">
+<div class="subs" bind:this={subs} role="group" aria-label="Seções de Mês">
   {#each [['tx', 'Lançamentos'], ['rec', 'Repetições']] as [k, text] (k)}
     <button type="button" class:on={sub === k} aria-pressed={sub === k} onclick={() => (sub = k)}>{text}</button>
   {/each}
 </div>
 
 {#if sub === 'rec'}
-<Recurrences {today} onopen={(id) => (ruleId = id)} onnew={hasAccounts ? () => (form = { repeating: true }) : undefined} />
+<Recurrences {today} onopen={(id) => (ruleId = id)} />
 {:else}
 <BalanceHero now={nowBal.current_cents} forecast={bal.projected_cents} {done} {todo} forecastLabel="Previsto até {shortDate(until)}" />
 
@@ -206,7 +214,7 @@
   </Sheet>
 {/if}
 {#if form}<TxForm tx={form.tx ?? null} repeating={!!form.repeating} onclose={() => (form = null)} />{/if}
-{#if ruleId}<RecurrenceSheet id={ruleId} {today} onclose={() => (ruleId = null)} />{/if}
+{#if ruleId}<RecurrenceSheet id={ruleId} {today} onclose={closeRule} />{/if}
 {#if scopeFor}<Scope verb="Excluir" onpick={removeScoped} onclose={() => (scopeFor = null)} />{/if}
 
 <style>

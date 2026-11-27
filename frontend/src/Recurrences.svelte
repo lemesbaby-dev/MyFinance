@@ -12,14 +12,15 @@
   import EmptyState from './ui/EmptyState.svelte';
   import { catOf, catMap } from './ui/logic.js';
 
-  // onopen(id): abre o detalhe da repetição. onnew: abre "Novo lançamento" já repetindo (ausente = sem conta ainda).
-  let { today, onopen, onnew } = $props();
+  // onopen(id): abre o detalhe da repetição. Criar é pelo botão "Nova repetição" da aba Mês.
+  let { today, onopen } = $props();
 
-  const view = $derived(recurrenceView(app.recurrences, app.transactions, today, app.rejectedIds));
-  const groups = $derived([['A pagar', 'expense'], ['A receber', 'income']].map(([title, kind]) => ({ title, rows: view.rows.filter((r) => !r.ended && r.rec.kind === kind) })));
-  const ended = $derived(view.rows.filter((r) => r.ended));
+  const view = $derived(recurrenceView(app.recurrences, app.transactions, today, app.rejectedIds, new Set(app.accounts.filter((a) => a.archived).map((a) => a.id))));
+  const groups = $derived([['A pagar', 'expense'], ['A receber', 'income']].map(([title, kind]) => ({ title, rows: view.rows.filter((r) => (!r.ended || r.overdue) && r.rec.kind === kind) })));
+  // Encerrada com atrasado fica na lista principal: ainda há o que efetivar ou excluir.
+  const ended = $derived(view.rows.filter((r) => r.ended && !r.overdue));
   const catColor = $derived(catMap(app.categories.map((c) => c.id)));
-  const accName = (id) => app.accounts.find((a) => a.id === id)?.name ?? '';
+  const accName = (id) => { const a = app.accounts.find((x) => x.id === id); return a ? a.name + (a.archived ? ' (arquivada)' : '') : ''; };
 </script>
 
 {#snippet row(r)}
@@ -42,14 +43,14 @@
 {/snippet}
 
 {#if !view.rows.length}
-  <EmptyState icon="refresh" title="Nenhuma repetição ainda" text="Aluguel, salário, academia: lance uma vez e o MyFinance repete para você." actionLabel={onnew ? 'Nova repetição' : ''} onaction={onnew} />
+  <EmptyState icon="refresh" title="Nenhuma repetição ainda" text="Aluguel, salário, academia: lance uma vez e o MyFinance repete para você." />
 {:else}
   <Card>
     <p class="cap">Próximos 30 dias</p>
     <div class="tot">
       <Stat label="A receber" cents={view.income_cents} kind="income" />
       <Stat label="A pagar" cents={view.expense_cents} kind="expense" />
-      <Stat label="Sobra" cents={view.income_cents - view.expense_cents} />
+      <Stat label="Resultado" cents={view.income_cents - view.expense_cents} />
     </div>
   </Card>
 

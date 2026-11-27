@@ -257,17 +257,18 @@ export const editRule = (id, from, changes) => serial(async () => {
 
 /**
  * Encerra a repetição: saem as pendentes de hoje em diante; as atrasadas (data < hoje) e as efetivadas ficam.
- * Grava `end_date` (ontem; nunca antes do início, que o servidor recusa) e desativa: nada mais é gerado.
+ * Grava `end_date` (ontem; nunca antes do início, que o servidor recusa, nem depois de uma data final que já existia)
+ * e desativa: nada mais é gerado. Já encerrada e sem nada a tirar: não grava de novo.
  */
 export const endRecurrence = (id) => serial(async () => {
   const rec = app.recurrences.find((r) => r.id === id);
   if (!rec) return;
   const today = todayISO();
-  const end = addDays(today, -1);
-  await sync.saveMany([
-    ...pendingOf(id).filter((t) => t.date >= today).map((t) => del('transaction', t.id)),
-    put('recurrence', id, { ...doc(rec), active: false, end_date: end > rec.start_date ? end : rec.start_date }),
-  ]);
+  const last = addDays(today, -1);
+  const end = [rec.start_date, rec.end_date && rec.end_date < last ? rec.end_date : last].sort().at(-1);
+  const gone = pendingOf(id).filter((t) => t.date >= today).map((t) => del('transaction', t.id));
+  if (!gone.length && !rec.active && rec.end_date === end) return;
+  await sync.saveMany([...gone, put('recurrence', id, { ...doc(rec), active: false, end_date: end })]);
   await reload();
 });
 

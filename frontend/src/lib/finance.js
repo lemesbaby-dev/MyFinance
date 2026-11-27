@@ -299,9 +299,10 @@ export function rhythm(r) {
  * rows: { rec, paid, pending (datas pendentes em ordem), overdue (quantas são < hoje), next (próxima de hoje em diante), ended },
  *   ordenadas pelo que vence antes (atrasado primeiro).
  * ended: regra desativada, com data final no passado, ou com data final e nada mais por vir.
- * income_cents/expense_cents: pendentes de repetições com data de hoje a hoje + 30 dias (`excluded`: ids recusados ficam fora).
+ * income_cents/expense_cents: pendentes de repetições nos 30 dias a partir de hoje (hoje a hoje + 29).
+ *   Ficam fora os ids recusados (`excluded`) e os lançamentos de conta arquivada (`archived`), como na aba Mês.
  */
-export function recurrenceView(recs, txs, today, excluded = new Set()) {
+export function recurrenceView(recs, txs, today, excluded = new Set(), archived = new Set()) {
   const until = addDays(today, 30);
   const by = new Map(recs.map((rec) => [rec.id, { rec, paid: 0, pending: [] }]));
   const sum = { income: 0, expense: 0 };
@@ -310,7 +311,7 @@ export function recurrenceView(recs, txs, today, excluded = new Set()) {
     if (!row) continue;
     if (t.status === 'paid') { row.paid++; continue; }
     row.pending.push(t.date);
-    if (t.date >= today && t.date <= until && t.kind in sum && !excluded.has(t.id)) sum[t.kind] += t.amount_cents;
+    if (t.date >= today && t.date < until && t.kind in sum && !excluded.has(t.id) && !archived.has(t.account_id)) sum[t.kind] += t.amount_cents;
   }
   const rows = [...by.values()].map((row) => {
     const { rec, pending } = row;

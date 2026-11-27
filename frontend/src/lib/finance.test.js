@@ -394,7 +394,15 @@ test('recurrenceView: próximo vencimento, atraso, encerradas e resumo de 30 dia
   assert.deepEqual(['desativada', 'passou', 'cortada', 'academia'].map((id) => row(id).ended), [true, true, true, false]);
   assert.equal(row('passou').overdue, 1, 'encerrada mantém o atrasado');
   assert.deepEqual(v.rows.filter((r) => !r.ended).map((r) => r.rec.id), ['condominio', 'salario', 'aluguel', 'academia'], 'atrasado primeiro, depois o que vence antes');
-  // 30 dias = 27/11 a 27/12 (inclusive): salário 2x; aluguel 05/12 e condomínio 10/12; atrasados, recusado e avulso fora
-  assert.deepEqual([v.income_cents, v.expense_cents], [10000, 200]);
+  // 30 dias = 27/11 a 26/12: salário de hoje entra, o de 27/12 não; aluguel 05/12 e condomínio 10/12; atrasados, recusado e avulso fora
+  assert.deepEqual([v.income_cents, v.expense_cents], [5000, 200]);
   assert.deepEqual(recurrenceView([], txs, today), { rows: [], income_cents: 0, expense_cents: 0 });
+});
+
+test('recurrenceView: conta arquivada fica fora do resumo (como na aba Mês), mas a repetição continua listada', () => {
+  const rec = { id: 'r', kind: 'expense', description: 'r', amount_cents: 200, frequency: 'monthly', interval_n: 1, start_date: '2026-01-05', end_date: null, active: true, generated_until: '2027-11-27' };
+  const txs = [{ id: 'a', ...txDoc({ recurrence_id: 'r', date: '2026-12-05', amount_cents: 200, account_id: 'velha' }) }, { id: 'b', ...txDoc({ recurrence_id: 'r', date: '2026-12-06', amount_cents: 300, account_id: 'ativa' }) }];
+  const v = recurrenceView([rec], txs, '2026-11-27', new Set(), new Set(['velha']));
+  assert.equal(v.expense_cents, 300);
+  assert.equal(v.rows[0].pending.length, 2);
 });
