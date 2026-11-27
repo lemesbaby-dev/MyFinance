@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { money, parseMoney } from './format.js';
 import {
   addMonths, addDays, occurrences, splitInstallments, balances, monthView, materialize, horizon, shiftMonth, monthEnd,
-  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment, filterTxs,
+  validateRule, parseISO, txDoc, isValidISO, validCents, adjustment, filterTxs, rhythm, recurrenceView,
 } from './finance.js';
 
 const nbsp = (s) => s.replace(/ /g, ' ');
@@ -352,4 +352,49 @@ test('ajuste muda o saldo da conta, mas não os totais nem os gastos por categor
   assert.equal(v.rows.length, 2); // o ajuste continua na lista
   // excluir o ajuste devolve o saldo anterior
   assert.equal(balances(acc, txs.filter((x) => x.id !== '2'), '2026-10-31').accounts[0].current_cents, 600000);
+});
+
+test('rhythm: ritmo em linguagem de leigo, com intervalo', () => {
+  const r = (frequency, interval_n, start_date) => rhythm({ frequency, interval_n, start_date });
+  assert.equal(r('monthly', 1, '2026-01-05'), 'Todo mês, dia 5');
+  assert.equal(r('monthly', 2, '2026-01-31'), 'A cada 2 meses, dia 31');
+  assert.equal(r('weekly', 1, '2026-11-23'), 'Toda semana, às segundas'); // 23/11/2026 é segunda
+  assert.equal(r('weekly', 2, '2026-11-28'), 'A cada 2 semanas, aos sábados');
+  assert.equal(r('yearly', 1, '2026-03-05'), 'Todo ano, em 05/03');
+  assert.equal(r('daily', 1, '2026-03-05'), 'Todo dia');
+  assert.equal(r('daily', 3, '2026-03-05'), 'A cada 3 dias');
+});
+
+test('recurrenceView: próximo vencimento, atraso, encerradas e resumo de 30 dias', () => {
+  const today = '2026-11-27';
+  const rec = (id, o = {}) => ({ id, kind: 'expense', description: id, amount_cents: 100, frequency: 'monthly', interval_n: 1, start_date: '2026-01-05', end_date: null, active: true, generated_until: '2027-11-27', ...o });
+  let n = 0;
+  const tx = (recurrence_id, date, o = {}) => ({ id: `t${++n}`, ...txDoc({ recurrence_id, date, amount_cents: 100, ...o }) });
+  const recs = [
+    rec('aluguel'),
+    rec('condominio'),
+    rec('salario', { kind: 'income' }),
+    rec('desativada', { active: false }),
+    rec('passou', { end_date: '2026-10-31' }),
+    rec('cortada', { end_date: '2026-12-04' }), // metade antiga de um "este e os próximos": nada mais por vir
+    rec('academia', { end_date: '2027-05-10' }),
+  ];
+  const txs = [
+    tx('aluguel', '2026-12-05'), tx('aluguel', '2027-01-05'), tx('aluguel', '2026-11-05', { status: 'paid' }),
+    tx('condominio', '2026-12-10'), tx('condominio', '2026-11-10'), tx('condominio', '2026-10-10'),
+    tx('salario', '2026-11-27', { kind: 'income', amount_cents: 5000 }), tx('salario', '2026-12-27', { kind: 'income', amount_cents: 5000 }), tx('salario', '2026-12-28', { kind: 'income', amount_cents: 1 }),
+    tx('passou', '2026-10-05'),
+    { ...tx('academia', '2026-12-10'), id: 'recusado' },
+    tx(null, '2026-12-01', { amount_cents: 999 }), // avulso: fora do resumo
+  ];
+  const v = recurrenceView(recs, txs, today, new Set(['recusado']));
+  const row = (id) => v.rows.find((r) => r.rec.id === id);
+  assert.deepEqual([row('aluguel').next, row('aluguel').overdue, row('aluguel').paid, row('aluguel').ended], ['2026-12-05', 0, 1, false]);
+  assert.deepEqual([row('condominio').next, row('condominio').overdue, row('condominio').pending[0]], ['2026-12-10', 2, '2026-10-10']);
+  assert.deepEqual(['desativada', 'passou', 'cortada', 'academia'].map((id) => row(id).ended), [true, true, true, false]);
+  assert.equal(row('passou').overdue, 1, 'encerrada mantém o atrasado');
+  assert.deepEqual(v.rows.filter((r) => !r.ended).map((r) => r.rec.id), ['condominio', 'salario', 'aluguel', 'academia'], 'atrasado primeiro, depois o que vence antes');
+  // 30 dias = 27/11 a 27/12 (inclusive): salário 2x; aluguel 05/12 e condomínio 10/12; atrasados, recusado e avulso fora
+  assert.deepEqual([v.income_cents, v.expense_cents], [10000, 200]);
+  assert.deepEqual(recurrenceView([], txs, today), { rows: [], income_cents: 0, expense_cents: 0 });
 });

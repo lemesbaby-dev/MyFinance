@@ -3,6 +3,8 @@
   import { balances, filterTxs, monthView, monthEnd, monthOf, shiftMonth, todayISO } from './lib/finance.js';
   import { shortDate } from './lib/format.js';
   import TxForm from './TxForm.svelte';
+  import Recurrences from './Recurrences.svelte';
+  import RecurrenceSheet from './RecurrenceSheet.svelte';
   import Scope from './Scope.svelte';
   import BalanceHero from './ui/BalanceHero.svelte';
   import MonthNav from './ui/MonthNav.svelte';
@@ -33,7 +35,9 @@
   let today = $state(todayISO()); // renova ao voltar para o app (virou o dia)
   let month = $state(monthOf(todayISO()));
   let filter = $state(FILTERS.some(([k]) => k === saved) ? saved : 'all');
-  let form = $state(null); // { tx } | {}
+  let form = $state(null); // { tx } | { repeating } | {}
+  let sub = $state('tx'); // subaba: tx (Lançamentos) | rec (Repetições)
+  let ruleId = $state(null); // repetição com o detalhe aberto
   let find = $state({ q: '', accountId: '', categoryId: '' }); // busca e filtros: valem enquanto a aba Mês está aberta
   let finding = $state(false);
   let bar = $state();
@@ -96,6 +100,7 @@
   ].filter(Boolean).join(' · ');
   const menuOf = (t) => [
     { label: 'Editar', icon: 'edit', onselect: () => (form = { tx: t }) },
+    ...(app.recurrences.some((r) => r.id === t.recurrence_id) ? [{ label: 'Ver repetição', icon: 'refresh', onselect: () => (ruleId = t.recurrence_id) }] : []),
     ...(t.status === 'paid' && !t.is_adjustment ? [{ label: 'Desfazer', icon: 'undo', onselect: () => toggle(t) }] : []),
     { label: 'Excluir', icon: 'trash', danger: true, onselect: () => removeOne(t) },
   ];
@@ -120,6 +125,15 @@
     menuLabel="Mais ações: {t.description}" />
 {/snippet}
 
+<div class="subs" role="group" aria-label="Seções de Mês">
+  {#each [['tx', 'Lançamentos'], ['rec', 'Repetições']] as [k, text] (k)}
+    <button type="button" class:on={sub === k} aria-pressed={sub === k} onclick={() => (sub = k)}>{text}</button>
+  {/each}
+</div>
+
+{#if sub === 'rec'}
+<Recurrences {today} onopen={(id) => (ruleId = id)} onnew={hasAccounts ? () => (form = { repeating: true }) : undefined} />
+{:else}
 <BalanceHero now={nowBal.current_cents} forecast={bal.projected_cents} {done} {todo} forecastLabel="Previsto até {shortDate(until)}" />
 
 <MonthNav {label} onprev={() => (month = shiftMonth(month, -1))} onnext={() => (month = shiftMonth(month, 1))} />
@@ -177,8 +191,9 @@
     <Card><CategoryBar items={spending} /></Card>
   {/if}
 </section>
+{/if}
 
-{#if hasAccounts}<div class="fab"><Button onclick={() => (form = {})}><Icon name="plus" />Lançar</Button></div>{/if}
+{#if hasAccounts}<div class="fab"><Button onclick={() => (form = { repeating: sub === 'rec' })}><Icon name="plus" />{sub === 'rec' ? 'Nova repetição' : 'Lançar'}</Button></div>{/if}
 {#if finding}
   <Sheet title="Buscar e filtrar" onclose={() => (finding = false)}>
     <TextInput label="Buscar" placeholder="Descrição ou notas" bind:value={find.q} autocomplete="off" />
@@ -190,7 +205,8 @@
     </div>
   </Sheet>
 {/if}
-{#if form}<TxForm tx={form.tx ?? null} onclose={() => (form = null)} />{/if}
+{#if form}<TxForm tx={form.tx ?? null} repeating={!!form.repeating} onclose={() => (form = null)} />{/if}
+{#if ruleId}<RecurrenceSheet id={ruleId} {today} onclose={() => (ruleId = null)} />{/if}
 {#if scopeFor}<Scope verb="Excluir" onpick={removeScoped} onclose={() => (scopeFor = null)} />{/if}
 
 <style>
@@ -198,6 +214,10 @@
   .tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); container-type: inline-size; }
   /* Três colunas sempre: a fonte segue a largura do card (como no BalanceHero) para "+R$ 5.000,00" caber. */
   .tot :global(.ui-money) { font-size: clamp(var(--fs-2), 4.6cqw, var(--fs-4)); }
+  .subs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: var(--bw-1) solid var(--border-subtle); }
+  .subs button { min-height: var(--tap); border: 0; border-bottom: var(--bw-2) solid transparent; background: transparent; font: var(--fw-bold) var(--fs-3) var(--font-text); color: var(--text-muted); }
+  .subs .on { color: var(--brand-strong); border-bottom-color: var(--brand-strong); }
+  .subs button:focus-visible { outline: var(--bw-2) solid var(--focus-ring); outline-offset: calc(var(--bw-2) * -1); }
   .bar { display: flex; align-items: center; gap: var(--space-2); }
   .bar :global(.ui-seg) { flex: 1; min-width: 0; }
   .found { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
