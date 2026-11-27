@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyFinance — Protótipo · Repetições (issue #23)</title>
+<style>
+/* Cópia literal de docs/design/tokens/tokens.css (não edite aqui; edite a fonte). */
+/* =========================================================================
+   MyFinance — tokens da direção B (calorosa). Fonte da verdade; contrato de tema em docs/design/tokens/tokens.md.
+   3 camadas: primitivos -> semânticos -> componente.
+   Componentes só usam as camadas 2 e 3. Contraste verificado por contraste.mjs.
+   Convenção do arquivo (o script depende dela): blocos :root sem indentação.
+   Tema: segue o sistema (prefers-color-scheme); override manual opcional via
+   <html data-theme="light|dark">. O bloco dark aparece 2x (media + atributo):
+   contraste.mjs falha se divergirem.
+   ========================================================================= */
+
+/* ---------- CAMADA 1 · PRIMITIVOS ---------- */
+:root {
+  /* neutros quentes */
+  --cream-0:#FFFFFF; --cream-25:#FFFBF6; --cream-50:#FFF6EC; --cream-100:#F8EBDC; --cream-200:#EBDAC7; --cream-300:#D5BFA8;
+  --brown-400:#9A8573; --brown-500:#7A6757; --brown-600:#5E4D40; --brown-800:#3A2D24; --brown-900:#2A1F18;
+  --night-900:#17110D; --night-850:#1E1713; --night-800:#271E18; --night-700:#34291F; --night-600:#43362B; --night-300:#A99886; --night-100:#EFE3D6;
+  /* marca damasco */
+  --apricot-50:#FFEEDF; --apricot-200:#FFC99B; --apricot-400:#F5893F; --apricot-600:#BF4E14; --apricot-700:#9E3F0D;
+  /* semântica financeira (sem vermelho puro) */
+  --green-50:#E3F5EA; --green-600:#1B7A4B; --green-300:#6FD6A0;
+  --plum-50:#F9E6F0; --plum-600:#9A3A66; --plum-300:#F0A3C6;
+  --indigo-50:#E8EAFB; --indigo-600:#4452B5; --indigo-300:#AEB8FF;
+  --amber-50:#FFEBD0; --amber-700:#A44A06; --amber-300:#FFB877;
+
+  /* categorias: Okabe-Ito estendida, 10 cores + glifo próprio (cor nunca é o único canal) */
+  --cat-1:#0072B2; --cat-2:#BD8300; --cat-3:#009E73; --cat-4:#C972A2; --cat-5:#1D96DB;
+  --cat-6:#D55E00; --cat-7:#9C920C; --cat-8:#7A5195; --cat-9:#8C6D31; --cat-10:#5B6770;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-dark); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
+  --cat-ink-dark:#2A1F18; --cat-ink-light:#FFFFFF; /* glifo sobre a cor */
+
+  /* espaçamento (grade 4px) */
+  --space-0:0; --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
+  --space-6:24px; --space-8:32px; --space-10:40px; --space-12:48px; --space-16:64px;
+
+  /* raio */
+  --radius-1:12px; --radius-2:18px; --radius-3:24px; --radius-4:32px; --radius-pill:999px;
+
+  /* tipografia */
+  --font-display:'Fredoka Variable','Fredoka',ui-rounded,'SF Pro Rounded',system-ui,sans-serif;
+  --font-text:'Nunito Variable','Nunito',ui-rounded,'SF Pro Rounded',system-ui,sans-serif;
+  --fs-1:12px; --fs-2:14px; --fs-3:16px; --fs-4:20px; --fs-5:26px; --fs-6:34px; /* escala ~x1.25 */
+  --fw-medium:500; --fw-bold:700; --fw-heavy:800; --fw-display:600;
+  --lh-tight:1.15; --lh-snug:1.3; --lh-body:1.45;
+  --ls-tight:-0.01em;
+
+  /* borda */
+  --bw-1:1px; --bw-2:2px;
+
+  /* movimento */
+  --dur-fast:150ms; --dur-base:200ms; --dur-slow:300ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-in-out:cubic-bezier(.4,0,.2,1);
+
+  /* z-index nomeados */
+  --z-base:0; --z-sticky:10; --z-tabbar:20; --z-sheet:30; --z-dialog:40; --z-toast:50;
+
+  /* alvo de toque mínimo */
+  --tap:44px;
+}
+
+/* ---------- CAMADA 2 · SEMÂNTICOS · claro (padrão) ---------- */
+:root {
+  color-scheme: light;
+  --surface-page:var(--cream-50);
+  --surface-raised:var(--cream-0);
+  --surface-sunken:var(--cream-100);
+  --surface-overlay:rgba(42,31,24,.45);
+  --border-subtle:var(--cream-200);
+  --border-strong:var(--cream-300);
+  --text-strong:var(--brown-900);
+  --text-body:var(--brown-800);
+  --text-muted:var(--brown-500);
+  --brand:var(--apricot-600);
+  --brand-soft:var(--apricot-50);
+  --brand-strong:var(--apricot-700);
+  --on-brand:#FFFFFF;
+  --focus-ring:var(--indigo-600);
+
+  /* financeiro. Status nunca só por cor: sempre sinal/ícone/rótulo. */
+  --color-income:var(--green-600);    --color-income-soft:var(--green-50);
+  --color-expense:var(--plum-600);    --color-expense-soft:var(--plum-50);
+  --color-transfer:var(--brown-600);  --color-transfer-soft:var(--cream-100);
+  --color-forecast:var(--indigo-600); --color-forecast-soft:var(--indigo-50);
+  --color-overdue:var(--amber-700);   --color-overdue-soft:var(--amber-50);
+  --color-pending:var(--brown-500);   --color-pending-soft:var(--cream-100);
+  --color-settled:var(--green-600);   --color-settled-soft:var(--green-50);
+
+  --shadow-soft:0 6px 18px rgba(94,60,30,.10);
+  --shadow-lift:0 14px 36px rgba(94,60,30,.18);
+}
+
+/* ---------- CAMADA 2 · SEMÂNTICOS · escuro ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-page:var(--night-900);
+    --surface-raised:var(--night-800);
+    --surface-sunken:var(--night-850);
+    --surface-overlay:rgba(0,0,0,.6);
+    --border-subtle:var(--night-600);
+    --border-strong:var(--night-300);
+    --text-strong:#FFF5EA;
+    --text-body:var(--night-100);
+    --text-muted:var(--night-300);
+    --brand:var(--apricot-400);
+    --brand-soft:#3A2415;
+    --brand-strong:var(--apricot-400);
+    --cat-1:#0072B2; --cat-2:#E69F00; --cat-3:#009E73; --cat-4:#CC79A7; --cat-5:#56B4E9;
+    --cat-6:#D55E00; --cat-7:#F0E442; --cat-8:#8558A2; --cat-9:#8C6D31; --cat-10:#606C76;
+    --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-dark); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
+    --on-brand:var(--brown-900);
+    --focus-ring:var(--indigo-300);
+    --color-income:var(--green-300);    --color-income-soft:#17301F;
+    --color-expense:var(--plum-300);    --color-expense-soft:#3A1F2D;
+    --color-transfer:var(--night-100);  --color-transfer-soft:var(--night-700);
+    --color-forecast:var(--indigo-300); --color-forecast-soft:#1F2442;
+    --color-overdue:var(--amber-300);   --color-overdue-soft:#3B2512;
+    --color-pending:var(--night-300);   --color-pending-soft:var(--night-700);
+    --color-settled:var(--green-300);   --color-settled-soft:#17301F;
+    --shadow-soft:0 6px 18px rgba(0,0,0,.35);
+    --shadow-lift:0 14px 36px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page:var(--night-900);
+  --surface-raised:var(--night-800);
+  --surface-sunken:var(--night-850);
+  --surface-overlay:rgba(0,0,0,.6);
+  --border-subtle:var(--night-600);
+  --border-strong:var(--night-300);
+  --text-strong:#FFF5EA;
+  --text-body:var(--night-100);
+  --text-muted:var(--night-300);
+  --brand:var(--apricot-400);
+  --brand-soft:#3A2415;
+  --brand-strong:var(--apricot-400);
+  --cat-1:#0072B2; --cat-2:#E69F00; --cat-3:#009E73; --cat-4:#CC79A7; --cat-5:#56B4E9;
+  --cat-6:#D55E00; --cat-7:#F0E442; --cat-8:#8558A2; --cat-9:#8C6D31; --cat-10:#606C76;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-dark); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
+  --on-brand:var(--brown-900);
+  --focus-ring:var(--indigo-300);
+  --color-income:var(--green-300);    --color-income-soft:#17301F;
+  --color-expense:var(--plum-300);    --color-expense-soft:#3A1F2D;
+  --color-transfer:var(--night-100);  --color-transfer-soft:var(--night-700);
+  --color-forecast:var(--indigo-300); --color-forecast-soft:#1F2442;
+  --color-overdue:var(--amber-300);   --color-overdue-soft:#3B2512;
+  --color-pending:var(--night-300);   --color-pending-soft:var(--night-700);
+  --color-settled:var(--green-300);   --color-settled-soft:#17301F;
+  --shadow-soft:0 6px 18px rgba(0,0,0,.35);
+  --shadow-lift:0 14px 36px rgba(0,0,0,.5);
+}
+
+/* ---------- MODO DALTONISMO · <html data-cvd="on"> · combina com claro/escuro ----------
+   Sobrescreve só tokens semânticos/categoria. Receita=azul, despesa=laranja (eixo azul-laranja,
+   seguro p/ protan/deutan) em vez de verde-vermelho; categorias separadas por luminância+matiz
+   (ΔE2000 >= 15 nas simulações, medido por contraste.mjs). Glifo/sinal/rótulo continuam obrigatórios. */
+:root[data-cvd="on"] {
+  --cat-1:#4B5016; --cat-2:#2D757D; --cat-3:#22A08D; --cat-4:#144752; --cat-5:#4A1C21;
+  --cat-6:#A18F29; --cat-7:#141254; --cat-8:#BF364B; --cat-9:#D02FCD; --cat-10:#5C22A0;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-light); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-light); --cat-5-ink:var(--cat-ink-light); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-light); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-light); --cat-10-ink:var(--cat-ink-light);
+  --color-income:#0A6BA3;   --color-income-soft:#E2EDF4;
+  --color-expense:#6D1503;  --color-expense-soft:#EDE3E1;
+  --color-forecast:#480F61; --color-forecast-soft:#E9E2EC;
+  --color-overdue:#886003;  --color-overdue-soft:#F1ECE1;
+  --color-pending:#6C675C;  --color-pending-soft:#EDEDEB;
+  --color-transfer:#393939; --color-transfer-soft:#E7E7E7;
+  --color-settled:#0A6BA3;  --color-settled-soft:#E2EDF4;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-cvd="on"]:not([data-theme="light"]) {
+    --color-income:#A2CEFD;   --color-income-soft:#363333;
+    --color-expense:#FA6B42;  --color-expense-soft:#40271D;
+    --color-forecast:#9E83F1; --color-forecast-soft:#352A32;
+    --color-overdue:#F9DB93;  --color-overdue-soft:#403527;
+    --color-pending:#D1D1D1;  --color-pending-soft:#3B332E;
+    --color-transfer:#B19B8B; --color-transfer-soft:#382D26;
+    --color-settled:#A2CEFD;  --color-settled-soft:#363333;
+    --cat-1:#9F4C89; --cat-2:#ACE4EC; --cat-3:#A1B035; --cat-4:#7567DF; --cat-5:#BF7BA3;
+    --cat-6:#4B9B70; --cat-7:#A6A8EC; --cat-8:#D02C2E; --cat-9:#E3E78E; --cat-10:#E7B9B1;
+    --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-light); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-dark); --cat-10-ink:var(--cat-ink-dark);
+  }
+}
+:root[data-cvd="on"][data-theme="dark"] {
+  --color-income:#A2CEFD;   --color-income-soft:#363333;
+  --color-expense:#FA6B42;  --color-expense-soft:#40271D;
+  --color-forecast:#9E83F1; --color-forecast-soft:#352A32;
+  --color-overdue:#F9DB93;  --color-overdue-soft:#403527;
+  --color-pending:#D1D1D1;  --color-pending-soft:#3B332E;
+  --color-transfer:#B19B8B; --color-transfer-soft:#382D26;
+  --color-settled:#A2CEFD;  --color-settled-soft:#363333;
+  --cat-1:#9F4C89; --cat-2:#ACE4EC; --cat-3:#A1B035; --cat-4:#7567DF; --cat-5:#BF7BA3;
+  --cat-6:#4B9B70; --cat-7:#A6A8EC; --cat-8:#D02C2E; --cat-9:#E3E78E; --cat-10:#E7B9B1;
+  --cat-1-ink:var(--cat-ink-light); --cat-2-ink:var(--cat-ink-dark); --cat-3-ink:var(--cat-ink-dark); --cat-4-ink:var(--cat-ink-light); --cat-5-ink:var(--cat-ink-dark); --cat-6-ink:var(--cat-ink-dark); --cat-7-ink:var(--cat-ink-dark); --cat-8-ink:var(--cat-ink-light); --cat-9-ink:var(--cat-ink-dark); --cat-10-ink:var(--cat-ink-dark);
+}
+
+/* ---------- CAMADA 2 · tipografia semântica (valor monetário) ---------- */
+:root {
+  --num-features:tabular-nums lining-nums;
+  /* grande: hero e sheet (Fredoka) */
+  --money-lg-font:var(--font-display); --money-lg-size:var(--fs-6); --money-lg-weight:var(--fw-display); --money-lg-lh:var(--lh-tight);
+  /* médio: cartões/resumos (Nunito 800) */
+  --money-md-font:var(--font-text); --money-md-size:var(--fs-4); --money-md-weight:var(--fw-heavy); --money-md-lh:var(--lh-snug);
+  /* pequeno: linhas de lista */
+  --money-sm-font:var(--font-text); --money-sm-size:var(--fs-3); --money-sm-weight:var(--fw-heavy); --money-sm-lh:var(--lh-snug);
+  /* positivo/negativo: a cor vem de --color-income / --color-expense; o sinal (+/−) é obrigatório no texto */
+  --money-positive:var(--color-income);
+  --money-negative:var(--color-expense);
+}
+
+/* ---------- CAMADA 3 · COMPONENTE ---------- */
+:root {
+  --btn-radius:var(--radius-pill); --btn-h:var(--tap); --btn-px:var(--space-5);
+  --btn-primary-bg:var(--brand); --btn-primary-fg:var(--on-brand);
+  --btn-quiet-bg:var(--brand-soft); --btn-quiet-fg:var(--text-strong);
+  --card-bg:var(--surface-raised); --card-radius:var(--radius-3); --card-pad:var(--space-5); --card-shadow:var(--shadow-soft);
+  --row-gap:var(--space-3); --row-pad:var(--space-3); --row-icon:44px; --row-min-h:var(--tap);
+  --tabbar-bg:var(--surface-raised); --tabbar-active-bg:var(--brand-soft); --tabbar-active-fg:var(--brand-strong);
+  --sheet-radius:var(--radius-4); --sheet-z:var(--z-sheet);
+  --field-bg:var(--surface-sunken); --field-radius:var(--radius-2); --field-h:var(--tap);
+  --chip-radius:var(--radius-pill);
+  --tabbar-h:calc(var(--tap) + var(--space-3)); --menu-w:208px; --toast-bg:var(--text-strong); --toast-fg:var(--surface-page);
+}
+
+/* ---------- Movimento reduzido: durações viram ~0 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast:0.01ms; --dur-base:0.01ms; --dur-slow:0.01ms; }
+}
+</style>
+<style>
+/* ---------- Página do protótipo (fora do celular) ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--surface-sunken); color: var(--text-body); font: var(--fw-medium) var(--fs-3)/var(--lh-body) var(--font-text); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: var(--bw-2) solid var(--focus-ring); outline-offset: var(--bw-2); }
+h1, h2, h3, p { margin: 0; }
+svg.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.stage { display: flex; flex-wrap: wrap; gap: var(--space-8); justify-content: center; align-items: flex-start; padding: var(--space-6) var(--space-4); }
+.panel { width: 340px; max-width: 100%; display: grid; gap: var(--space-5); }
+.panel h1 { font: var(--fw-display) var(--fs-5)/var(--lh-tight) var(--font-display); color: var(--text-strong); }
+.panel h2 { font: var(--fw-heavy) var(--fs-1)/var(--lh-tight) var(--font-text); color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: var(--space-2); }
+.panel .small, .small { font-size: var(--fs-2); color: var(--text-muted); }
+.opts { display: grid; gap: var(--space-2); }
+.opt { text-align: left; background: var(--surface-raised); border: var(--bw-2) solid var(--border-subtle); border-radius: var(--radius-2); padding: var(--space-3); display: grid; gap: var(--space-1); min-height: var(--tap); }
+.opt b { color: var(--text-strong); display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.opt span { font-size: var(--fs-2); color: var(--text-muted); }
+.opt[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); }
+.proscons { background: var(--surface-raised); border-radius: var(--radius-2); padding: var(--space-3); font-size: var(--fs-2); display: grid; gap: var(--space-1); }
+.proscons p::before { font-weight: var(--fw-heavy); margin-right: var(--space-2); }
+.proscons .pro::before { content: '+'; color: var(--color-income); }
+.proscons .con::before { content: '−'; color: var(--color-expense); }
+.panel ul { margin: 0; padding-left: var(--space-5); font-size: var(--fs-2); display: grid; gap: var(--space-1); }
+
+/* ---------- Moldura ---------- */
+.phone { width: 390px; max-width: 100%; height: 844px; max-height: calc(100vh - var(--space-8)); min-height: 560px; background: var(--surface-page); border: var(--space-2) solid var(--text-strong); border-radius: 44px; overflow: hidden; position: relative; display: flex; flex-direction: column; box-shadow: var(--shadow-lift); }
+.hdr { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-2); min-height: calc(var(--tap) + var(--space-4)); }
+.hdr h2 { font: var(--fw-display) var(--fs-5)/var(--lh-tight) var(--font-display); color: var(--text-strong); letter-spacing: var(--ls-tight); }
+.iconbtn { width: var(--tap); height: var(--tap); border: 0; background: transparent; border-radius: var(--radius-pill); display: grid; place-items: center; color: var(--text-strong); flex: none; }
+.iconbtn:hover { background: var(--surface-sunken); }
+.screen { flex: 1; overflow-y: auto; padding: var(--space-2) var(--space-4) var(--space-8); display: flex; flex-direction: column; gap: var(--space-4); }
+.tabbar { display: flex; background: var(--tabbar-bg); border-top: var(--bw-1) solid var(--border-subtle); padding: var(--space-1) var(--space-2); min-height: var(--tabbar-h); }
+.tabbar button { flex: 1; min-height: var(--tap); border: 0; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); font: var(--fw-bold) var(--fs-1)/var(--lh-tight) var(--font-text); color: var(--text-muted); }
+.tabbar .pill { display: grid; place-items: center; width: var(--space-12); height: var(--space-8); border-radius: var(--radius-2); }
+.tabbar .on { color: var(--tabbar-active-fg); }
+.tabbar .on .pill { background: var(--tabbar-active-bg); }
+
+/* ---------- Componentes (espelham frontend/src/ui) ---------- */
+.subtabs { display: flex; gap: var(--space-5); border-bottom: var(--bw-1) solid var(--border-subtle); }
+.subtabs button { border: 0; background: transparent; min-height: var(--tap); padding: 0 var(--space-1); font: var(--fw-heavy) var(--fs-3) var(--font-text); color: var(--text-muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.subtabs button[aria-selected="true"] { color: var(--brand-strong); border-bottom-color: var(--brand); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--space-1); padding: var(--space-1); background: var(--surface-sunken); border-radius: var(--radius-2); }
+.seg button { min-height: var(--tap); border: var(--bw-1) solid transparent; border-radius: var(--radius-1); background: transparent; font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-muted); }
+.seg button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-strong); border-color: var(--border-subtle); }
+.card { background: var(--card-bg); border-radius: var(--card-radius); padding: var(--card-pad); box-shadow: var(--card-shadow); }
+.cap { font: var(--fw-heavy) var(--fs-1) var(--font-text); color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: var(--space-2); }
+.tot { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+.stat span { display: block; font-size: var(--fs-1); font-weight: var(--fw-bold); color: var(--text-muted); }
+.stat b { font: var(--fw-heavy) var(--fs-2)/var(--lh-snug) var(--font-text); font-variant-numeric: var(--num-features); color: var(--text-strong); white-space: nowrap; }
+.money { font: var(--money-sm-weight) var(--money-sm-size)/var(--money-sm-lh) var(--money-sm-font); font-variant-numeric: var(--num-features); white-space: nowrap; color: var(--text-strong); }
+.income { color: var(--color-income) !important; } .expense { color: var(--color-expense) !important; }
+.grouphead { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); padding: var(--space-1); }
+.grouphead b { font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
+.grouphead span { font-size: var(--fs-1); font-weight: var(--fw-bold); color: var(--text-muted); }
+.list { background: var(--surface-raised); border-radius: var(--card-radius); border: var(--bw-1) solid var(--border-subtle); overflow: visible; }
+.list > * + * { border-top: var(--bw-1) solid var(--border-subtle); }
+.list > :first-child { border-radius: var(--card-radius) var(--card-radius) 0 0; } .list > :last-child { border-radius: 0 0 var(--card-radius) var(--card-radius); } .list > :only-child { border-radius: var(--card-radius); }
+.row { width: 100%; text-align: left; border: 0; background: transparent; display: grid; grid-template-columns: var(--row-icon) 1fr auto; gap: var(--space-1) var(--row-gap); align-items: center; padding: var(--row-pad); min-height: calc(var(--tap) + var(--space-3)); position: relative; }
+button.row:hover { background: var(--surface-sunken); }
+.row.late { background: var(--color-overdue-soft); }
+.row .t { font-weight: var(--fw-bold); color: var(--text-strong); line-height: var(--lh-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .m { margin-top: var(--space-1); font-size: var(--fs-1); font-weight: var(--fw-bold); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .main { min-width: 0; }
+.row .act { grid-column: 1 / 4; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.row .tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.row.off .t, .row.off .money { color: var(--text-muted) !important; } .row.off .dot { opacity: .62; }
+.dot { width: var(--row-icon); height: var(--row-icon); border-radius: var(--radius-2); display: grid; place-items: center; font: var(--fw-heavy) var(--fs-3) var(--font-text); background: var(--surface-sunken); color: var(--text-muted); }
+.badge { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-2); border-radius: var(--chip-radius); font: var(--fw-heavy) var(--fs-1)/1.5 var(--font-text); background: var(--color-pending-soft); color: var(--color-pending); white-space: nowrap; }
+.badge svg { width: 14px; height: 14px; }
+.badge.forecast { background: var(--color-forecast-soft); color: var(--color-forecast); }
+.badge.overdue { background: var(--color-overdue-soft); color: var(--color-overdue); border: var(--bw-1) solid currentColor; }
+.badge.brand { background: var(--brand-soft); color: var(--brand-strong); }
+.badge.settled { background: var(--color-settled-soft); color: var(--color-settled); }
+.btn { min-height: var(--btn-h); padding: 0 var(--btn-px); border-radius: var(--btn-radius); border: var(--bw-1) solid transparent; font: var(--fw-heavy) var(--fs-3) var(--font-text); display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
+.btn.secondary { background: var(--btn-quiet-bg); color: var(--btn-quiet-fg); }
+.btn.ghost { background: transparent; color: var(--text-strong); }
+.btn.danger { background: transparent; color: var(--color-expense); border-color: currentColor; }
+.btn.sm { min-height: var(--space-8); padding: 0 var(--space-3); font-size: var(--fs-2); }
+.btn.block { width: 100%; }
+.empty { text-align: center; padding: var(--space-10) var(--space-4); display: grid; gap: var(--space-3); justify-items: center; }
+.empty .art { width: 88px; height: 88px; border-radius: var(--radius-4); background: var(--brand-soft); color: var(--brand-strong); display: grid; place-items: center; }
+.empty .art svg { width: 40px; height: 40px; }
+.empty h3 { font: var(--fw-display) var(--fs-4)/var(--lh-tight) var(--font-display); color: var(--text-strong); }
+.empty p { color: var(--text-muted); max-width: 30ch; }
+details.ended > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: var(--tap); padding: 0 var(--space-1); font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
+details.ended > summary::-webkit-details-marker { display: none; }
+details.ended > summary svg { transition: transform var(--dur-fast) var(--ease-out); } details.ended[open] > summary svg { transform: rotate(90deg); }
+.hero { background: var(--brand-soft); border-radius: var(--card-radius); padding: var(--card-pad); display: flex; justify-content: space-between; gap: var(--space-3); }
+.hero span { display: block; font-size: var(--fs-1); font-weight: var(--fw-bold); color: var(--text-muted); }
+.hero b { font: var(--fw-display) var(--fs-5)/var(--lh-tight) var(--font-display); color: var(--text-strong); font-variant-numeric: var(--num-features); }
+.hero .fc b { color: var(--color-forecast); }
+.monthnav { display: flex; align-items: center; justify-content: space-between; font: var(--fw-display) var(--fs-4) var(--font-display); color: var(--text-strong); }
+.sech { font: var(--fw-display) var(--fs-4)/var(--lh-tight) var(--font-display); color: var(--text-strong); display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.menu { position: absolute; right: var(--space-3); top: calc(100% - var(--space-3)); z-index: var(--z-sticky); width: var(--menu-w); background: var(--surface-raised); border: var(--bw-1) solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-lift); padding: var(--space-1); display: grid; }
+.menu button { min-height: var(--tap); border: 0; background: transparent; text-align: left; padding: 0 var(--space-3); border-radius: var(--radius-1); font-weight: var(--fw-bold); display: flex; gap: var(--space-2); align-items: center; }
+.menu button:hover { background: var(--surface-sunken); }
+.muted { color: var(--text-muted); }
+
+/* ---------- Sheet, diálogo, toast ---------- */
+.scrim { position: absolute; inset: 0; background: var(--surface-overlay); z-index: var(--z-sheet); display: flex; align-items: flex-end; }
+.scrim.center { z-index: var(--z-dialog); align-items: center; justify-content: center; padding: var(--space-4); }
+.sheet { width: 100%; max-height: 92%; overflow-y: auto; background: var(--surface-page); border-radius: var(--sheet-radius) var(--sheet-radius) 0 0; padding: var(--space-4) var(--space-4) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.dialog { width: 100%; max-height: 92%; overflow-y: auto; background: var(--surface-page); border-radius: var(--radius-3); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); box-shadow: var(--shadow-lift); }
+.sheet h3, .dialog h3 { font: var(--fw-display) var(--fs-4)/var(--lh-tight) var(--font-display); color: var(--text-strong); }
+.sheethead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.sum { background: var(--surface-raised); border: var(--bw-1) solid var(--border-subtle); border-radius: var(--radius-3); padding: var(--space-4); display: grid; gap: var(--space-3); }
+.sum .top { display: flex; gap: var(--space-3); align-items: center; }
+.sum .top b { font: var(--money-md-weight) var(--money-md-size)/var(--money-md-lh) var(--money-md-font); font-variant-numeric: var(--num-features); display: block; }
+.sum .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+.next { list-style: none; margin: 0; padding: 0; font-size: var(--fs-2); }
+.next li { display: flex; justify-content: space-between; padding: var(--space-1) 0; }
+.next li + li { border-top: var(--bw-1) dashed var(--border-subtle); }
+.field { display: grid; gap: var(--space-1); }
+.field label, .field .lbl { font: var(--fw-bold) var(--fs-2) var(--font-text); color: var(--text-strong); }
+.field input, .field select { height: var(--field-h); background: var(--field-bg); border: var(--bw-1) solid var(--border-subtle); border-radius: var(--field-radius); padding: 0 var(--space-3); width: 100%; }
+.field .ro { min-height: var(--field-h); display: flex; align-items: center; padding: 0 var(--space-3); border: var(--bw-1) dashed var(--border-strong); border-radius: var(--field-radius); color: var(--text-body); font-weight: var(--fw-bold); }
+.field .help { font-size: var(--fs-1); color: var(--text-muted); font-weight: var(--fw-bold); }
+.field .err { font-size: var(--fs-1); color: var(--color-overdue); font-weight: var(--fw-heavy); }
+.note { font-size: var(--fs-2); color: var(--text-muted); }
+.stack { display: grid; gap: var(--space-2); }
+.conseq { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.conseq li { display: grid; grid-template-columns: var(--space-8) 1fr; gap: var(--space-3); align-items: start; font-size: var(--fs-2); }
+.conseq .i { width: var(--space-8); height: var(--space-8); border-radius: var(--radius-1); display: grid; place-items: center; }
+.conseq b { color: var(--text-strong); display: block; }
+.toast { position: absolute; left: var(--space-4); right: var(--space-4); bottom: calc(var(--tabbar-h) + var(--space-4)); z-index: var(--z-toast); background: var(--toast-bg); color: var(--toast-fg); border-radius: var(--radius-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--tap); font-weight: var(--fw-bold); box-shadow: var(--shadow-lift); }
+.toast button { border: 0; background: transparent; color: inherit; font-weight: var(--fw-heavy); text-decoration: underline; min-height: var(--tap); padding: 0 var(--space-3); }
+#selftest-out { font: 12px/1.4 monospace; white-space: pre-wrap; padding: var(--space-4); }
+@media (max-width: 800px) {
+  .stage { padding: var(--space-3) 0 0; gap: var(--space-4); }
+  .panel { width: 100%; padding: 0 var(--space-4); }
+  .phone { width: 100%; border: 0; border-radius: 0; height: 100vh; max-height: none; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class="stage">
+  <aside class="panel" id="panel"></aside>
+  <div class="phone" id="phone" aria-label="Protótipo em moldura de celular"></div>
+</div>
+<div id="selftest-out"></div>
+
+<script>
+/* Protótipo descartável: dados falsos, regras calculadas na hora. Nada aqui vira código de produção. */
+const TODAY = '2026-11-27';
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const ICONS = {
+  home: 'M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z', wallet: 'M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2zM16 14h.01',
+  tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01', sliders: 'M4 6h16M4 12h16M4 18h16M15 4v4M8 10v4M13 16v4',
+  repeat: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3', clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
+  chev: 'M9 6l6 6-6 6', back: 'M15 6l-6 6 6 6', plus: 'M12 5v14M5 12h14', check: 'M5 12l5 5 9-10', flag: 'M5 21V4h11l-2 4 2 4H5',
+  more: 'M5 12h.01M12 12h.01M19 12h.01', x: 'M6 6l12 12M18 6L6 18', stop: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 9h6v6H9z', trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+};
+const ic = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
+
+/* ---------- datas (UTC, ISO) ---------- */
+const D = (s) => new Date(s + 'T00:00:00Z');
+const iso = (d) => d.toISOString().slice(0, 10);
+const addDays = (s, n) => { const d = D(s); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+const addMonths = (s, n) => { const d = D(s), day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate())); return iso(d); };
+const HORIZON = addMonths(TODAY, 12); // o app gera 12 meses à frente
+const fmtDate = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}` + (y === TODAY.slice(0, 4) ? '' : `/${y}`); };
+const fmtMoney = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const signed = (c, kind) => (kind === 'income' ? '+' : '−') + fmtMoney(c);
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+/* ---------- dados de exemplo ---------- */
+const ACCOUNTS = { itau: 'Itaú', nubank: 'Nubank', carteira: 'Carteira' };
+const CATS = { moradia: ['Moradia', 1], casa: ['Casa', 5], saude: ['Saúde', 3], transporte: ['Transporte', 6], lazer: ['Lazer', 8], estudo: ['Estudo', 2], trabalho: ['Trabalho', 9], '': ['Sem categoria', 0] };
+const seed = () => [
+  { id: 'r1', kind: 'expense', description: 'Aluguel', amount_cents: 180000, account_id: 'itau', category_id: 'moradia', frequency: 'monthly', interval_n: 1, start_date: '2026-03-05', end_date: null, active: true, late: [] },
+  { id: 'r2', kind: 'expense', description: 'Condomínio', amount_cents: 42000, account_id: 'itau', category_id: 'moradia', frequency: 'monthly', interval_n: 1, start_date: '2026-04-20', end_date: null, active: true, late: ['2026-11-20'] },
+  { id: 'r3', kind: 'expense', description: 'Academia', amount_cents: 11990, account_id: 'nubank', category_id: 'saude', frequency: 'monthly', interval_n: 1, start_date: '2026-06-10', end_date: '2027-05-10', active: true, late: [] },
+  { id: 'r4', kind: 'expense', description: 'Faxina', amount_cents: 18000, account_id: 'carteira', category_id: 'casa', frequency: 'weekly', interval_n: 2, start_date: '2026-09-04', end_date: null, active: true, late: [] },
+  { id: 'r5', kind: 'expense', description: 'Internet', amount_cents: 9990, account_id: 'nubank', category_id: 'casa', frequency: 'monthly', interval_n: 1, start_date: '2026-01-15', end_date: null, active: true, late: [] },
+  { id: 'r6', kind: 'expense', description: 'Seguro do carro', amount_cents: 142000, account_id: 'itau', category_id: 'transporte', frequency: 'yearly', interval_n: 1, start_date: '2026-02-20', end_date: null, active: true, late: [] },
+  { id: 'r7', kind: 'income', description: 'Salário', amount_cents: 650000, account_id: 'itau', category_id: 'trabalho', frequency: 'monthly', interval_n: 1, start_date: '2026-01-05', end_date: null, active: true, late: [] },
+  { id: 'r8', kind: 'income', description: 'Aluguel da vaga de garagem', amount_cents: 25000, account_id: 'nubank', category_id: '', frequency: 'monthly', interval_n: 1, start_date: '2026-07-01', end_date: null, active: true, late: [] },
+  { id: 'r9', kind: 'expense', description: 'Streaming de filmes', amount_cents: 3990, account_id: 'nubank', category_id: 'lazer', frequency: 'monthly', interval_n: 1, start_date: '2025-08-12', end_date: '2026-09-12', active: true, late: [] },
+  { id: 'r10', kind: 'expense', description: 'Curso de inglês', amount_cents: 28000, account_id: 'nubank', category_id: 'estudo', frequency: 'monthly', interval_n: 1, start_date: '2026-05-03', end_date: '2026-10-03', active: false, late: [] },
+];
+
+/* ---------- regra -> lançamentos ---------- */
+const stepDate = (r, i) => r.frequency === 'daily' ? addDays(r.start_date, i * r.interval_n) : r.frequency === 'weekly' ? addDays(r.start_date, 7 * i * r.interval_n) : addMonths(r.start_date, (r.frequency === 'yearly' ? 12 : 1) * i * r.interval_n);
+function occurrences(r, until = HORIZON, ignoreEnd = false) {
+  const out = [];
+  for (let i = 0; ; i++) { const d = stepDate(r, i); if (d > until || (!ignoreEnd && r.end_date && d > r.end_date)) break; out.push(d); }
+  return out;
+}
+function stats(r) {
+  const all = occurrences(r);
+  return { paid: all.filter((d) => d < TODAY && !r.late.includes(d)), late: all.filter((d) => d < TODAY && r.late.includes(d)), pending: all.filter((d) => d >= TODAY) };
+}
+const stateOf = (r) => !r.active || (r.end_date && r.end_date < TODAY) ? 'ended' : r.end_date ? 'ending' : 'active';
+function rhythm(r) {
+  const n = r.interval_n, d = D(r.start_date);
+  if (r.frequency === 'daily') return n === 1 ? 'Todo dia' : `A cada ${n} dias`;
+  if (r.frequency === 'weekly') return (n === 1 ? 'Toda semana' : `A cada ${n} semanas`) + `, ${WEEKDAYS[d.getUTCDay()]}`;
+  if (r.frequency === 'monthly') return (n === 1 ? 'Todo mês' : `A cada ${n} meses`) + `, dia ${d.getUTCDate()}`;
+  return (n === 1 ? 'Todo ano' : `A cada ${n} anos`) + `, em ${r.start_date.slice(8)}/${r.start_date.slice(5, 7)}`;
+}
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/* ---------- estado ---------- */
+const HOME = { A: 'month', B: 'more', C: 'accounts' };
+const hash = new URLSearchParams(location.hash.slice(1));
+const SELFTEST = hash.has('selftest');
+const data = { full: seed(), empty: [] };
+const S = {
+  place: hash.get('place') || 'A', tab: hash.get('tab') || 'month', sub: hash.get('sub') || 'rep', data: hash.get('data') || 'full',
+  theme: hash.get('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  sheet: hash.get('sheet'), confirm: hash.has('confirm'), menu: null, toast: null, error: {}, seq: 0,
+};
+const rules = () => data[S.data];
+const rule = (id) => rules().find((r) => r.id === id);
+
+/* ---------- painel de fora ---------- */
+const PLACES = {
+  A: ['Mês › Repetições', 'Subaba no topo da aba Mês: “Lançamentos | Repetições”.', ['É onde a pessoa já lança e vê “repete” nas linhas: 1 toque a partir da tela inicial.', 'Criar continua no mesmo lugar (Lançar › Repetir).'], ['A aba Mês ganha um segundo seletor, além do filtro Todos/Pendentes/Efetivados.']],
+  B: ['Mais › Repetições', 'Uma linha na aba Mais abre a tela, com “voltar”.', ['Não mexe nas telas do dia a dia.'], ['Fica escondido: Mais é ajuste (tema, sincronização, conta). 2 toques, e ninguém procura o aluguel em “Mais”.']],
+  C: ['Contas › Repetições', 'Subaba no topo da aba Contas: “Contas | Repetições”.', ['A aba Contas é curta: a subaba não disputa espaço.'], ['Confunde “Contas” (banco, carteira) com “contas a pagar”. A repetição é de lançamento, não de conta bancária.']],
+};
+function panelHTML() {
+  const [, , pros, cons] = PLACES[S.place];
+  return `
+  <div><h1>Repetições</h1><p class="small">Protótipo da issue #23 · direção B · hoje no protótipo: ${fmtDate(TODAY)}/${TODAY.slice(0, 4)}</p></div>
+  <div><h2>Onde a tela mora</h2><div class="opts">
+    ${Object.entries(PLACES).map(([k, [t, d]]) => `<button class="opt" data-act="place" data-v="${k}" aria-pressed="${S.place === k}"><b>${k} · ${t}${k === 'A' ? ' <i class="badge brand" style="font-style:normal">Recomendada</i>' : ''}</b><span>${d}</span></button>`).join('')}
+  </div></div>
+  <div class="proscons">${pros.map((p) => `<p class="pro">${p}</p>`).join('')}${cons.map((p) => `<p class="con">${p}</p>`).join('')}</div>
+  <div><h2>Dados de exemplo</h2><div class="seg" role="group" aria-label="Dados de exemplo">
+    <button data-act="data" data-v="full" aria-pressed="${S.data === 'full'}">Com repetições</button><button data-act="data" data-v="empty" aria-pressed="${S.data === 'empty'}">Vazio</button></div></div>
+  <div><h2>Tema</h2><div class="seg" role="group" aria-label="Tema">
+    <button data-act="theme" data-v="light" aria-pressed="${S.theme === 'light'}">Claro</button><button data-act="theme" data-v="dark" aria-pressed="${S.theme === 'dark'}">Escuro</button></div></div>
+  <div><h2>O que dá para testar</h2><ul>
+    <li>Tocar numa repetição: detalhe e edição.</li><li>“Encerrar repetição”: o aviso do que acontece.</li>
+    <li>Estados: ativa (Aluguel), com atraso (Condomínio), com data final (Academia), encerrada (no fim da lista).</li>
+    <li>“Nova repetição” e o estado vazio.</li><li>Na alternativa A: menu ⋯ de um lançamento › “Ver repetição”.</li></ul></div>`;
+}
+
+/* ---------- telas ---------- */
+const TABS = [['month', 'Mês', 'home'], ['accounts', 'Contas', 'wallet'], ['categories', 'Categorias', 'tag'], ['more', 'Mais', 'sliders']];
+const dot = (catId, glyph) => { const [name, n] = CATS[catId] ?? CATS['']; return `<span class="dot" ${n ? `style="background:var(--cat-${n});color:var(--cat-${n}-ink)"` : ''} aria-hidden="true">${glyph ?? esc(name[0])}</span>`; };
+
+function ruleRow(r) {
+  const st = stateOf(r), s = stats(r), tags = [];
+  if (s.late.length) tags.push(`<span class="badge overdue">${ic('clock')}Atrasado · ${fmtDate(s.late[0])}</span>`);
+  if (st === 'ended') tags.push(`<span class="badge">${ic('stop')}Encerrada · parou em ${fmtDate(r.end_date ?? TODAY)}</span>`);
+  else {
+    if (s.pending.length) tags.push(`<span class="badge forecast">${ic('repeat')}Próximo · ${fmtDate(s.pending[0])}</span>`);
+    if (st === 'ending') tags.push(`<span class="badge brand">${ic('flag')}Até ${fmtDate(r.end_date)} · ${s.pending.length === 1 ? 'falta 1' : `faltam ${s.pending.length}`}</span>`);
+  }
+  return `<button class="row ${st === 'ended' ? 'off' : ''} ${s.late.length ? 'late' : ''}" data-act="open" data-v="${r.id}" data-state="${st}" aria-label="${esc(r.description)}, ${signed(r.amount_cents, r.kind)}, ${rhythm(r)}">
+    ${dot(r.category_id)}
+    <span class="main"><span class="t">${esc(r.description)}</span><span class="m" style="display:block">${rhythm(r)} · ${ACCOUNTS[r.account_id]}</span></span>
+    <span class="money ${r.kind}">${signed(r.amount_cents, r.kind)}</span>
+    <span class="act"><span class="tags">${tags.join('')}</span>${ic('chev')}</span>
+  </button>`;
+}
+function repList() {
+  const all = rules(), live = all.filter((r) => stateOf(r) !== 'ended'), ended = all.filter((r) => stateOf(r) === 'ended');
+  if (!all.length) return `<div class="empty" id="empty"><div class="art">${ic('repeat')}</div><h3>Nenhuma repetição ainda</h3>
+    <p>Aluguel, salário, academia: lance uma vez e o MyFinance repete para você.</p><button class="btn" data-act="new">${ic('plus')}Nova repetição</button></div>`;
+  const next = (r) => { const s = stats(r); return s.late[0] ?? s.pending[0] ?? '9999'; }; // atrasado primeiro, depois o que vence antes
+  const in30 = (r) => stats(r).pending.filter((d) => d <= addDays(TODAY, 30)).length * r.amount_cents;
+  const sum = (k) => live.filter((r) => r.kind === k).reduce((a, r) => a + in30(r), 0);
+  const inc = sum('income'), exp = sum('expense');
+  const group = (k, title) => { const g = live.filter((r) => r.kind === k).sort((a, b) => next(a).localeCompare(next(b))); return g.length ? `<section><div class="grouphead"><b>${title}</b><span>${g.length}</span></div><div class="list" role="list">${g.map(ruleRow).join('')}</div></section>` : ''; };
+  return `
+  <div class="sech"><span>Contas que se repetem</span><button class="btn sm secondary" data-act="new">${ic('plus')}Nova</button></div>
+  <div class="card"><p class="cap">Próximos 30 dias</p><div class="tot">
+    <div class="stat"><span>A receber</span><b class="income">${signed(inc, 'income')}</b></div>
+    <div class="stat"><span>A pagar</span><b class="expense">${signed(exp, 'expense')}</b></div>
+    <div class="stat"><span>Sobra</span><b>${inc - exp < 0 ? '−' : '+'}${fmtMoney(Math.abs(inc - exp))}</b></div></div></div>
+  ${group('expense', 'A pagar')}${group('income', 'A receber')}
+  ${ended.length ? `<details class="ended"><summary>Encerradas (${ended.length})${ic('chev')}</summary><div class="list" role="list">${ended.map(ruleRow).join('')}</div><p class="note" style="padding:var(--space-2) var(--space-1)">Não geram mais lançamentos. O que já foi efetivado continua no histórico.</p></details>` : ''}`;
+}
+
+function txRow(id, title, meta, cents, kind, cat, badge, ruleId) {
+  const has = ruleId && rule(ruleId);
+  return `<div class="row ${badge[0] === 'overdue' ? 'late' : ''}">${dot(cat)}
+    <span class="main"><span class="t">${title}</span><span class="m" style="display:block">${meta}${has ? ' · repete' : ''}</span></span>
+    <span class="money ${kind}">${signed(cents, kind)}</span>
+    <span class="act"><span class="tags"><span class="badge ${badge[0]}">${ic(badge[1])}${badge[2]}</span></span>
+      <button class="iconbtn" data-act="menu" data-v="${id}" aria-label="Mais ações: ${title}" aria-expanded="${S.menu === id}">${ic('more')}</button></span>
+    ${S.menu === id ? `<div class="menu" role="menu"><button role="menuitem" data-act="nop">Editar</button>${has ? `<button role="menuitem" data-act="see" data-v="${ruleId}">${ic('repeat')}Ver repetição</button>` : ''}<button role="menuitem" data-act="nop">Excluir</button></div>` : ''}
+  </div>`;
+}
+const monthMock = () => `
+  <div class="hero"><div><span>Hoje</span><b>R$ 3.412,80</b></div><div class="fc" style="text-align:right"><span>Previsto até 30/11</span><b>R$ 2.812,80</b></div></div>
+  <div class="monthnav"><button class="iconbtn" data-act="nop" aria-label="Mês anterior">${ic('back')}</button>Novembro de 2026<button class="iconbtn" data-act="nop" aria-label="Próximo mês">${ic('chev')}</button></div>
+  <div class="seg" role="group" aria-label="Mostrar"><button aria-pressed="true">Todos</button><button aria-pressed="false" data-act="nop">Pendentes</button><button aria-pressed="false" data-act="nop">Efetivados</button></div>
+  <section><div class="grouphead"><b>Atrasados</b><span>1</span></div><div class="list">${txRow('t1', 'Condomínio', 'Itaú', 42000, 'expense', 'moradia', ['overdue', 'clock', 'Atrasado'], 'r2')}</div></section>
+  <section><div class="grouphead"><b>Hoje</b></div><div class="list">${txRow('t2', 'Faxina', 'Carteira', 18000, 'expense', 'casa', ['', 'clock', 'Pendente'], 'r4')}${txRow('t3', 'Mercado', 'Nubank', 23745, 'expense', 'casa', ['settled', 'check', 'Efetivado'])}</div></section>
+  <section><div class="grouphead"><b>15/11</b></div><div class="list">${txRow('t4', 'Internet', 'Nubank', 9990, 'expense', 'casa', ['settled', 'check', 'Efetivado'], 'r5')}</div></section>`;
+const accountsMock = () => `<div class="card"><p class="cap">Saldo total</p><b class="money" style="font-size:var(--fs-5)">R$ 3.412,80</b></div>
+  <div class="list">${[['Itaú', 'Conta corrente', 'R$ 2.150,30'], ['Nubank', 'Conta corrente', 'R$ 1.082,50'], ['Carteira', 'Dinheiro', 'R$ 180,00']].map(([n, t, v]) => `<div class="row"><span class="dot">${n[0]}</span><span class="main"><span class="t">${n}</span><span class="m" style="display:block">${t}</span></span><span class="money">${v}</span></div>`).join('')}</div>`;
+const categoriesMock = () => `<div class="list">${Object.entries(CATS).filter(([k]) => k).map(([k, [n]]) => `<div class="row">${dot(k)}<span class="main"><span class="t">${n}</span></span><span></span></div>`).join('')}</div>`;
+function moreMock() {
+  const live = rules().filter((r) => stateOf(r) !== 'ended');
+  const entry = S.place !== 'B' ? '' : `<section class="stack"><div class="sech">Contas que se repetem</div><div class="list"><button class="row" data-act="sub" data-v="rep" id="more-entry">
+    <span class="dot" style="background:var(--brand-soft);color:var(--brand-strong)">${ic('repeat')}</span>
+    <span class="main"><span class="t">Repetições</span><span class="m" style="display:block">${live.length ? `${plural(live.length, 'ativa', 'ativas')} · aluguel, salário, assinaturas` : 'Nenhuma ainda'}</span></span>${ic('chev')}</button></div></section>`;
+  return `${entry}
+  <section class="stack"><div class="sech">Aparência</div><div class="card"><div class="seg"><button aria-pressed="true">Sistema</button><button aria-pressed="false" data-act="nop">Claro</button><button aria-pressed="false" data-act="nop">Escuro</button></div></div></section>
+  <section class="stack"><div class="sech">Sincronização</div><div class="card" style="display:flex;gap:var(--space-2);align-items:center">${ic('check')}Tudo sincronizado</div></section>
+  <section class="stack"><div class="sech">Conta</div><p class="muted">voce@exemplo.com</p><div><button class="btn secondary" data-act="nop">Sair</button></div></section>`;
+}
+
+/* ---------- detalhe / edição ---------- */
+const opt = (map, cur, label = (v) => v) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${label(v)}</option>`).join('');
+const toInput = (c) => (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+function sheetHTML() {
+  const isNew = S.sheet === 'new', r = isNew ? { kind: 'expense', description: '', amount_cents: 0, account_id: 'nubank', category_id: '', frequency: 'monthly', interval_n: 1, start_date: TODAY, end_date: null, active: true, late: [] } : rule(S.sheet);
+  if (!r) return '';
+  const st = stateOf(r), s = stats(r), ended = st === 'ended', e = S.error;
+  const head = `<div class="sheethead"><h3 id="sheet-title">${isNew ? 'Nova repetição' : ended ? 'Repetição encerrada' : 'Repetição'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Fechar">${ic('x')}</button></div>`;
+  const summary = isNew ? '' : `<div class="sum">
+    <div class="top">${dot(r.category_id)}<div><b class="${r.kind}">${signed(r.amount_cents, r.kind)}</b><span class="small">${esc(r.description)} · ${rhythm(r)}</span></div></div>
+    <div class="tags" style="display:flex;flex-wrap:wrap;gap:var(--space-1)">
+      ${st === 'active' ? `<span class="badge settled">${ic('repeat')}Ativa · sem data para acabar</span>` : st === 'ending' ? `<span class="badge brand">${ic('flag')}Termina em ${fmtDate(r.end_date)}</span>` : `<span class="badge">${ic('stop')}Encerrada · parou em ${fmtDate(r.end_date ?? TODAY)}</span>`}
+      ${s.late.length ? `<span class="badge overdue">${ic('clock')}${plural(s.late.length, 'atrasado', 'atrasados')}</span>` : ''}</div>
+    <div class="facts"><div class="stat"><span>Desde</span><b>${fmtDate(r.start_date)}</b></div><div class="stat"><span>Já efetivados</span><b id="n-paid">${s.paid.length}</b></div><div class="stat"><span>Pendentes</span><b id="n-pending">${s.pending.length + s.late.length}</b></div></div>
+    ${ended ? '' : `<div><p class="cap" style="margin:0">Próximos lançamentos</p><ul class="next">${s.pending.slice(0, 3).map((d) => `<li><span>${fmtDate(d)}</span><span class="money ${r.kind}" style="font-size:var(--fs-2)">${signed(r.amount_cents, r.kind)}</span></li>`).join('')}</ul>
+      <p class="note">${r.end_date ? `O último é em ${fmtDate(s.pending.at(-1) ?? r.end_date)}.` : 'Os lançamentos aparecem na aba Mês até 12 meses à frente, e vão sendo criados conforme o tempo passa.'}</p></div>`}
+  </div>`;
+  if (ended) return `<div class="scrim" data-act="close-bg"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">${head}${summary}
+    <p class="note">Esta repetição não gera mais lançamentos. ${plural(s.paid.length, 'lançamento efetivado continua', 'lançamentos efetivados continuam')} no histórico e nos saldos.${s.late.length ? ` ${plural(s.late.length, 'atrasado continua', 'atrasados continuam')} na aba Mês.` : ''}</p>
+    <div class="stack"><button class="btn secondary block" data-act="again">${ic('repeat')}Repetir de novo</button><button class="btn ghost block" data-act="close">Fechar</button></div></div></div>`;
+  return `<div class="scrim" data-act="close-bg"><form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate>${head}${summary}
+    ${isNew ? `<div class="seg" role="group" aria-label="Tipo"><button type="button" data-act="kind" data-v="expense" aria-pressed="true">Despesa</button><button type="button" data-act="kind" data-v="income" aria-pressed="false">Receita</button></div><input type="hidden" name="kind" value="expense">` : ''}
+    <div class="field"><label for="f-amount">Valor (R$)</label><input id="f-amount" name="amount" inputmode="decimal" value="${r.amount_cents ? toInput(r.amount_cents) : ''}" placeholder="0,00" ${e.amount ? 'aria-invalid="true"' : ''}>${e.amount ? `<span class="err">${e.amount}</span>` : ''}</div>
+    <div class="field"><label for="f-desc">Descrição</label><input id="f-desc" name="description" maxlength="200" value="${esc(r.description)}" placeholder="Ex.: Aluguel" ${e.description ? 'aria-invalid="true"' : ''}>${e.description ? `<span class="err">${e.description}</span>` : '<span class="help">Como aparece na lista</span>'}</div>
+    <div class="field"><label for="f-acc">Conta</label><select id="f-acc" name="account_id">${opt(ACCOUNTS, r.account_id)}</select></div>
+    <div class="field"><label for="f-cat">Categoria</label><select id="f-cat" name="category_id">${opt(CATS, r.category_id ?? '', (v) => v[0])}</select></div>
+    ${isNew ? `<div class="field"><label for="f-freq">Repete</label><select id="f-freq" name="frequency">${opt({ daily: 'Todo dia', weekly: 'Toda semana', monthly: 'Todo mês', yearly: 'Todo ano' }, 'monthly')}</select></div>
+      <div class="field"><label for="f-start">Primeiro lançamento</label><input id="f-start" name="start_date" type="date" value="${TODAY}"></div>`
+    : `<div class="field"><span class="lbl">Repete</span><div class="ro">${rhythm(r)}</div><span class="help">Para mudar o ritmo ou o dia, encerre esta e crie outra.</span></div>`}
+    <div class="field"><label for="f-end">Termina em (opcional)</label><input id="f-end" name="end_date" type="date" min="${TODAY}" value="${r.end_date ?? ''}" ${e.end ? 'aria-invalid="true"' : ''}>
+      ${e.end ? `<span class="err">${e.end}</span>` : ''}<span class="help" id="end-hint">Deixe vazio para repetir sem data para acabar.</span></div>
+    ${isNew ? '' : `<p class="note">As mudanças valem para os lançamentos <b>pendentes</b>. Os já efetivados não mudam.</p>`}
+    <div class="stack"><button class="btn block" type="submit">${isNew ? 'Criar repetição' : 'Salvar'}</button>
+      ${isNew ? '' : `<button class="btn danger block" type="button" data-act="end">${ic('stop')}Encerrar repetição</button>`}</div>
+  </form></div>`;
+}
+function endHint() {
+  const r = rule(S.sheet), el = $('#end-hint'), v = $('#f-end')?.value;
+  if (!r || !el) return;
+  const gone = v ? stats(r).pending.filter((d) => d > v).length : 0;
+  el.textContent = !v ? 'Deixe vazio para repetir sem data para acabar.' : gone ? `Com essa data, ${plural(gone, 'lançamento pendente', 'lançamentos pendentes')} depois de ${fmtDate(v)} ${gone === 1 ? 'sai' : 'saem'} dos próximos meses.` : `O último lançamento será até ${fmtDate(v)}.`;
+}
+function confirmHTML() {
+  const r = rule(S.sheet); if (!r) return '';
+  const s = stats(r);
+  const li = (tone, icon, title, text) => `<li><span class="i" style="background:var(--color-${tone}-soft);color:var(--color-${tone})">${ic(icon)}</span><span><b>${title}</b>${text}</span></li>`;
+  return `<div class="scrim center"><div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" id="confirm">
+    <h3 id="dlg-title">Encerrar “${esc(r.description)}”?</h3>
+    <p class="note">Ela para de se repetir a partir de hoje (${fmtDate(TODAY)}).</p>
+    <ul class="conseq">
+      ${li('forecast', 'trash', s.pending.length ? `${plural(s.pending.length, 'lançamento pendente sai', 'lançamentos pendentes saem')}` : 'Nenhum lançamento pendente para tirar', s.pending.length ? `De ${fmtDate(s.pending[0])} em diante, somem da aba Mês. O previsto dos próximos meses é refeito sem ${s.pending.length === 1 ? 'ele' : 'eles'}.` : 'Ela só deixa de criar novos.')}
+      ${li('settled', 'check', `${plural(s.paid.length, 'já efetivado continua', 'já efetivados continuam')}`, 'Nada muda no que já aconteceu: histórico e saldos ficam iguais.')}
+      ${s.late.length ? li('overdue', 'clock', `${plural(s.late.length, 'atrasado continua na lista', 'atrasados continuam na lista')}`, `O de ${fmtDate(s.late[0])} fica na aba Mês para você efetivar ou excluir.`) : ''}
+    </ul>
+    <p class="note">Quer que pare só mais para frente? Cancele e preencha “Termina em”.</p>
+    <div class="stack"><button class="btn block" data-act="end-yes" style="background:var(--color-expense);color:var(--surface-page)">Encerrar</button><button class="btn ghost block" data-act="end-no">Cancelar</button></div>
+  </div></div>`;
+}
+
+/* ---------- render ---------- */
+function render() {
+  document.documentElement.dataset.theme = S.theme;
+  const home = S.tab === HOME[S.place], pushed = S.place === 'B' && home && S.sub === 'rep';
+  const subs = S.place === 'A' ? [['main', 'Lançamentos'], ['rep', 'Repetições']] : [['main', 'Contas'], ['rep', 'Repetições']];
+  const mock = { month: monthMock, accounts: accountsMock, categories: categoriesMock, more: moreMock }[S.tab];
+  const body = home && S.place !== 'B' ? `<div class="subtabs" role="tablist" aria-label="Seções de ${TABS.find(([k]) => k === S.tab)[1]}">${subs.map(([k, t]) => `<button role="tab" data-act="sub" data-v="${k}" aria-selected="${S.sub === k}">${t}</button>`).join('')}</div>${S.sub === 'rep' ? repList() : mock()}` : pushed ? repList() : mock();
+  $('#panel').innerHTML = panelHTML();
+  $('#phone').innerHTML = `
+    <header class="hdr">${pushed ? `<button class="iconbtn" data-act="sub" data-v="main" aria-label="Voltar para Mais">${ic('back')}</button>` : ''}<h2 id="title">${pushed ? 'Repetições' : TABS.find(([k]) => k === S.tab)[1]}</h2></header>
+    <main class="screen" id="screen">${body}</main>
+    <nav class="tabbar" aria-label="Seções">${TABS.map(([k, t, i]) => `<button data-act="tab" data-v="${k}" class="${S.tab === k ? 'on' : ''}" ${S.tab === k ? 'aria-current="page"' : ''}><span class="pill">${ic(i)}</span>${t}</button>`).join('')}</nav>
+    ${S.sheet ? sheetHTML() : ''}${S.sheet && S.confirm ? confirmHTML() : ''}
+    ${S.toast ? `<div class="toast" role="status"><span>${S.toast.msg}</span>${S.toast.undo ? '<button data-act="undo">Desfazer</button>' : ''}</div>` : ''}`;
+  endHint();
+  if (!SELFTEST) history.replaceState(null, '', '#' + new URLSearchParams({ place: S.place, tab: S.tab, sub: S.sub, data: S.data, theme: S.theme }));
+}
+let toastTimer;
+function toast(msg, undo) { S.toast = { msg, undo }; clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = null; render(); }, 6000); }
+const parseMoney = (v) => Math.round(Number(String(v).trim().replace(/\./g, '').replace(',', '.')) * 100);
+
+function save() {
+  const f = Object.fromEntries(new FormData($('#form'))), cents = parseMoney(f.amount), isNew = S.sheet === 'new';
+  S.error = {};
+  if (!(cents > 0)) S.error.amount = 'Valor deve ser maior que zero';
+  if (!f.description.trim()) S.error.description = 'Informe uma descrição';
+  if (f.end_date && f.end_date < TODAY) S.error.end = 'Escolha uma data de hoje em diante, ou use “Encerrar repetição”.';
+  if (Object.keys(S.error).length) return render();
+  const patch = { description: f.description.trim(), amount_cents: cents, account_id: f.account_id, category_id: f.category_id, end_date: f.end_date || null };
+  if (isNew) rules().push({ id: 'n' + ++S.seq, kind: f.kind, frequency: f.frequency, interval_n: 1, start_date: f.start_date || TODAY, active: true, late: [], ...patch });
+  else Object.assign(rule(S.sheet), patch);
+  S.sheet = null; toast(isNew ? 'Repetição criada' : 'Repetição salva'); render();
+}
+const ACT = {
+  place: (v) => { Object.assign(S, { place: v, tab: HOME[v], sub: v === 'B' ? 'main' : 'rep', sheet: null, confirm: false, menu: null }); },
+  data: (v) => { Object.assign(S, { data: v, sheet: null, confirm: false }); },
+  theme: (v) => { S.theme = v; },
+  tab: (v) => { Object.assign(S, { tab: v, sub: 'main', menu: null }); },
+  sub: (v) => { S.sub = v; S.menu = null; },
+  open: (v) => { S.sheet = v; S.error = {}; },
+  new: () => { S.sheet = 'new'; S.error = {}; },
+  see: (v) => { S.sheet = v; S.menu = null; S.error = {}; },
+  menu: (v) => { S.menu = S.menu === v ? null : v; },
+  close: () => { S.sheet = null; S.confirm = false; },
+  end: () => { S.confirm = true; },
+  'end-no': () => { S.confirm = false; },
+  'end-yes': () => { const r = rule(S.sheet), before = { end_date: r.end_date, active: r.active }; Object.assign(r, { end_date: addDays(TODAY, -1), active: false }); S.sheet = null; S.confirm = false; toast('Repetição encerrada', () => Object.assign(r, before)); },
+  undo: () => { S.toast.undo(); S.toast = null; },
+  again: () => { const r = rule(S.sheet), start = occurrences(r, HORIZON, true).find((d) => d >= TODAY) ?? TODAY; rules().push({ ...r, id: 'n' + ++S.seq, start_date: start, end_date: null, active: true, late: [] }); S.sheet = null; toast(`De volta a partir de ${fmtDate(start)}`); },
+  kind: (v, el) => { el.parentElement.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b === el)); $('#form [name=kind]').value = v; return false; },
+  nop: () => { S.menu = null; toast('Fora deste protótipo'); },
+};
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act]');
+  if (!el) { if (S.menu) { S.menu = null; render(); } return; }
+  if (el.dataset.act === 'close-bg') { if (ev.target !== el) return; el.dataset.act = 'close'; }
+  if (ACT[el.dataset.act](el.dataset.v, el) !== false) render();
+  if (S.sheet) ($('#confirm .btn.ghost') ?? $('.sheet .iconbtn'))?.focus({ preventScroll: true });
+});
+document.addEventListener('submit', (ev) => { ev.preventDefault(); save(); });
+document.addEventListener('input', (ev) => { if (ev.target.id === 'f-end') endHint(); });
+document.addEventListener('keydown', (ev) => { if (ev.key !== 'Escape') return; if (S.confirm) S.confirm = false; else if (S.sheet) S.sheet = null; else if (S.menu) S.menu = null; else return; render(); });
+render();
+
+/* ---------- autoteste: abra index.html#selftest (clica pelo protótipo e confere) ---------- */
+if (SELFTEST) {
+  const out = [], ok = (name, cond) => out.push(`${cond ? 'ok  ' : 'FAIL'} ${name}`), click = (s) => { const el = $(s); if (!el) throw new Error('não achei ' + s); el.click(); };
+  const rows = (st) => document.querySelectorAll(`#screen button.row${st ? `[data-state="${st}"]` : '[data-state]'}`).length;
+  try {
+    Object.assign(S, { place: 'A', tab: 'month', sub: 'main', data: 'full', theme: 'light', sheet: null, confirm: false }); data.full = seed(); render();
+    ok('A: Mês abre em Lançamentos, com subabas', !!$('.subtabs') && !!$('.hero'));
+    click('[data-act=sub][data-v=rep]'); ok('A: subaba Repetições lista 8 vivas + 2 encerradas', rows() === 10 && rows('ended') === 2 && rows('ending') === 1);
+    ok('lista: Condomínio mostra atraso', /Atrasado · 20\/11/.test($('[data-v=r2]').textContent));
+    ok('lista: Aluguel mostra próximo 05/12', /Próximo · 05\/12/.test($('[data-v=r1]').textContent));
+    ok('lista: Academia mostra data final', /Até 10\/05\/2027 · faltam 6/.test($('[data-v=r3]').textContent));
+    click('[data-act=open][data-v=r3]'); ok('detalhe da Academia abre', $('#sheet-title').textContent === 'Repetição' && $('#n-paid').textContent === '6' && $('#n-pending').textContent === '6');
+    $('#f-amount').value = '0'; click('#form [type=submit]'); ok('edição valida valor', /maior que zero/.test($('#form').textContent));
+    $('#f-amount').value = '129,90'; click('#form [type=submit]'); ok('edição salva e volta para a lista', !S.sheet && /129,90/.test($('[data-v=r3]').textContent) && /Repetição salva/.test($('.toast').textContent));
+    click('[data-act=open][data-v=r2]'); click('[data-act=end]');
+    ok('encerrar explica pendentes, efetivados e atrasado', /12 lançamentos pendentes saem/.test($('#confirm').textContent) && /7 já efetivados continuam/.test($('#confirm').textContent) && /1 atrasado continua/.test($('#confirm').textContent));
+    click('[data-act=end-no]'); ok('cancelar mantém a repetição aberta', S.sheet === 'r2' && !$('#confirm'));
+    click('[data-act=end]'); click('[data-act=end-yes]'); ok('encerrar move para Encerradas', rows('ended') === 3 && stats(rule('r2')).pending.length === 0 && stats(rule('r2')).late.length === 1);
+    click('[data-act=undo]'); ok('desfazer devolve', rows('ended') === 2 && stateOf(rule('r2')) === 'active');
+    click('[data-act=open][data-v=r10]'); ok('encerrada: só leitura + repetir de novo', $('#sheet-title').textContent === 'Repetição encerrada' && !$('#form') && !!$('[data-act=again]'));
+    click('[data-act=again]'); ok('repetir de novo cria outra a partir de 03/12', rules().at(-1).start_date === '2026-12-03' && rows() === 11);
+    click('[data-act=sub][data-v=main]'); click('[data-act=menu][data-v=t4]'); click('[data-act=see]'); ok('A: menu do lançamento › Ver repetição', S.sheet === 'r5');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); ok('Escape fecha', !S.sheet);
+    click('[data-act=place][data-v=B]'); ok('B: abre em Mais com a entrada', $('#title').textContent === 'Mais' && !!$('#more-entry') && !$('.subtabs'));
+    click('#more-entry'); ok('B: tela Repetições com voltar', $('#title').textContent === 'Repetições' && rows() === 11);
+    click('.hdr [data-act=sub]'); ok('B: voltar retorna a Mais', $('#title').textContent === 'Mais');
+    click('[data-act=place][data-v=C]'); ok('C: Contas com subaba Repetições', $('#title').textContent === 'Contas' && $('[role=tab][aria-selected=true]').textContent === 'Repetições' && rows() === 11);
+    click('[data-act=tab][data-v=categories]'); ok('barra inferior segue com 4 abas, sem Repetições', document.querySelectorAll('.tabbar button').length === 4 && !/Repeti/.test($('.tabbar').textContent));
+    click('[data-act=place][data-v=A]'); click('[data-act=data][data-v=empty]'); ok('vazio: estado vazio com ação', !!$('#empty') && rows() === 0);
+    click('#empty [data-act=new]'); $('#f-amount').value = '1.234,56'; $('#f-desc').value = 'Plano de saúde'; click('#form [type=submit]');
+    ok('nova repetição aparece na lista', rows() === 1 && /1\.234,56/.test($('#screen').textContent) && /Próximo · 27\/11/.test($('#screen').textContent));
+    const bg = () => getComputedStyle($('#phone')).backgroundColor, light = bg();
+    click('[data-act=theme][data-v=dark]'); ok('tema escuro troca os tokens', document.documentElement.dataset.theme === 'dark' && bg() !== light);
+  } catch (e) { out.push('FAIL exceção: ' + e.message); }
+  const fails = out.filter((l) => l.startsWith('FAIL')).length;
+  $('#selftest-out').textContent = `SELFTEST ${fails ? 'FALHOU' : 'OK'} · ${out.length - fails}/${out.length}\n` + out.join('\n');
+}
+</script>
+</body>
+</html>
